@@ -32,7 +32,7 @@ jobs:
       - name: Site klasorunu hazirla
         run: |
           mkdir _site
-          cp index.html _site/
+          cp index.html manifest.webmanifest sw.js icon-192.png icon-512.png icon-maskable-512.png _site/  
           cp -r news _site/news
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
