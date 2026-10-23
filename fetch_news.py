@@ -168,11 +168,25 @@ def decode_google_url(link):
     except Exception:
         pass
     # Yeni bicim: Google'a sorulur.
-    page = http_get(f"https://news.google.com/articles/{b64}?hl=en-US&gl=US&ceid=US:en", limit=600_000, timeout=15).decode("utf-8", "replace")
-    sg = re.search(r'data-n-a-sg="([^"]+)"', page)
-    ts = re.search(r'data-n-a-ts="([^"]+)"', page)
-    if not sg or not ts:
-        return ""
+    page, last = "", ""
+    for u in (f"https://news.google.com/rss/articles/{b64}?hl=tr&gl=TR&ceid=TR:tr",
+              f"https://news.google.com/articles/{b64}?hl=en-US&gl=US&ceid=US:en"):
+        req = urllib.request.Request(u, headers={"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9",
+                                                 "Cookie": "CONSENT=YES+cb; SOCS=CAI"})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                page = resp.read(800_000).decode("utf-8", "replace")
+        except Exception as e:
+            last = f"sayfa-{type(e).__name__}"
+            continue
+        sg = re.search(r'data-n-a-sg=["\']([^"\']+)', page)
+        ts = re.search(r'data-n-a-ts=["\']([^"\']+)', page)
+        if sg and ts:
+            break
+        last = "imza-yok"
+        note_failure(u, page)
+    else:
+        raise ValueError(last or "imza-yok")
     inner = (
         '["garturlreq",[["X","X",["X","X"],null,null,1,1,"US:en",null,1,null,null,null,null,null,0,1],'
         f'"X","X",1,[1,1,1],1,1,null,0,0,null,0],"{b64}",{ts.group(1)},"{sg.group(1)}"]'
@@ -181,12 +195,28 @@ def decode_google_url(link):
     req = urllib.request.Request(
         "https://news.google.com/_/DotsSplashUi/data/batchexecute",
         data=body.encode(),
-        headers={"User-Agent": UA, "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"},
+        headers={"User-Agent": UA, "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+                 "Cookie": "CONSENT=YES+cb; SOCS=CAI"},
     )
     with urllib.request.urlopen(req, timeout=15) as resp:
         text = resp.read(1_000_000).decode("utf-8", "replace")
-    outer = json.loads(text.split("\n\n")[1])
-    return json.loads(outer[0][2])[1]
+    try:
+        outer = json.loads(text.split("\n\n")[1])
+        return json.loads(outer[0][2])[1]
+    except Exception:
+        note_failure("batchexecute", text)
+        raise ValueError("yanit-cozulemedi")
+
+
+_notes = []
+
+
+def note_failure(where, text):
+    """Ilk birkac hatada Google'in ne dondurdugunu loga yaz (teshis icin)."""
+    if len(_notes) < 3:
+        _notes.append(where)
+        snippet = re.sub(r"\s+", " ", text[:400])
+        print(f"  [teshis] {where}: uzunluk={len(text)} ornek={snippet!r}")
 
 
 def og_image(page_url):
@@ -213,7 +243,7 @@ def find_article_image(link):
         img = og_image(real)
         return img, "" if img else "resim yok"
     except Exception as e:
-        return "", type(e).__name__
+        return "", f"{type(e).__name__}:{str(e)[:30]}"
 
 
 def load_previous(cat):
