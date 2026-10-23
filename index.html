@@ -12,8 +12,15 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" type="image/png" href="icon-192.png">
+<script>
+(function(){try{var t=localStorage.getItem('haber_theme')||'dark',f=localStorage.getItem('haber_fs')||'1';
+var eff=t==='auto'?(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark'):t;
+document.documentElement.setAttribute('data-theme',eff);document.documentElement.style.setProperty('--fs',f);}catch(e){}})();
+</script>
 <style>
-  :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:rgba(255,255,255,0.08);--text:#f0f0f0;--muted:#8a8fa8;--accent:#4f8ef7;--amber:#f5a623;--radius:12px;}
+  :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:rgba(255,255,255,0.08);--text:#f0f0f0;--muted:#8a8fa8;--accent:#4f8ef7;--amber:#f5a623;--radius:12px;--desc:#d0d0d8;--fs:1;}
+  html[data-theme="light"]{--bg:#f4f5f8;--surface:#ffffff;--surface2:#e8ebf3;--border:rgba(0,0,0,0.1);--text:#16181f;--muted:#5d6277;--desc:#33374a;--accent:#2f6fe0;color-scheme:light;}
+  html[data-theme="amoled"]{--bg:#000000;--surface:#0c0c0e;--surface2:#17181f;color-scheme:dark;}
   *{box-sizing:border-box;margin:0;padding:0;}
   body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
   .topbar{position:sticky;top:0;z-index:100;background:var(--bg);border-bottom:1px solid var(--border);padding:14px 16px 0;}
@@ -32,15 +39,15 @@
   .featured-card{background:var(--surface);border-radius:var(--radius);overflow:hidden;margin-bottom:16px;cursor:pointer;transition:opacity .2s;}.featured-card:active{opacity:.8;}
   .feat-placeholder{width:100%;height:160px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:52px;}
   .feat-body{padding:14px;}
-  .feat-title{font-size:17px;font-weight:600;line-height:1.4;margin-bottom:8px;}
-  .feat-meta{font-size:12px;color:var(--muted);}
+  .feat-title{font-size:calc(17px*var(--fs));font-weight:600;line-height:1.4;margin-bottom:8px;}
+  .feat-meta{font-size:calc(12px*var(--fs));color:var(--muted);}
   .news-item{display:flex;gap:12px;padding:14px 0;border-bottom:1px solid var(--border);cursor:pointer;transition:opacity .2s;}.news-item:active{opacity:.7;}.news-item:last-child{border-bottom:none;}
   .news-content{flex:1;min-width:0;}
-  .news-title{font-size:14px;font-weight:600;line-height:1.4;margin-bottom:6px;}
-  .news-meta{font-size:11px;color:var(--muted);}
+  .news-title{font-size:calc(14px*var(--fs));font-weight:600;line-height:1.4;margin-bottom:6px;}
+  .news-meta{font-size:calc(11px*var(--fs));color:var(--muted);}
   .news-thumb{width:80px;height:80px;border-radius:8px;flex-shrink:0;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:28px;overflow:hidden;}
   .news-thumb img{width:100%;height:100%;object-fit:cover;}
-  .badge{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:3px 8px;border-radius:4px;margin-bottom:6px;}
+  .badge{display:inline-block;font-size:calc(10px*var(--fs));font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:3px 8px;border-radius:4px;margin-bottom:6px;}
   .b-gundem{background:rgba(79,142,247,.2);color:#4f8ef7;}.b-ekonomi{background:rgba(62,207,142,.2);color:#3ecf8e;}
   .b-spor{background:rgba(245,166,35,.2);color:#f5a623;}.b-teknoloji{background:rgba(167,139,250,.2);color:#a78bfa;}
   .b-saglik{background:rgba(224,82,82,.2);color:#e05252;}.b-dunya{background:rgba(96,165,250,.2);color:#60a5fa;}
@@ -55,11 +62,11 @@
   .detail-back{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--border);padding:14px 16px;}
   .back-btn{background:none;border:none;cursor:pointer;color:var(--accent);display:flex;align-items:center;gap:6px;font-size:14px;font-weight:500;}
   .detail-body{padding:20px 16px 80px;}
-  .detail-title{font-size:21px;font-weight:700;line-height:1.35;margin-bottom:10px;}
-  .detail-meta{font-size:12px;color:var(--muted);margin-bottom:16px;}
+  .detail-title{font-size:calc(21px*var(--fs));font-weight:700;line-height:1.35;margin-bottom:10px;}
+  .detail-meta{font-size:calc(12px*var(--fs));color:var(--muted);margin-bottom:16px;}
   .detail-icon{width:100%;height:180px;border-radius:var(--radius);background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:60px;margin-bottom:20px;}
   .detail-img{width:100%;border-radius:var(--radius);margin-bottom:20px;display:block;}
-  .detail-desc{font-size:15px;line-height:1.75;color:#d0d0d8;margin-bottom:20px;}
+  .detail-desc{font-size:calc(15px*var(--fs));line-height:1.75;color:var(--desc);margin-bottom:20px;}
   .detail-link{display:block;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;color:var(--accent);text-decoration:none;font-size:14px;font-weight:500;text-align:center;margin-bottom:10px;}
   .save-btn{width:100%;padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);color:var(--muted);font-size:14px;font-weight:500;cursor:pointer;}
   .save-btn.saved{background:rgba(245,166,35,.1);border-color:rgba(245,166,35,.3);color:var(--amber);}
@@ -76,6 +83,10 @@
   .nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 8px;background:none;border:none;cursor:pointer;color:var(--muted);font-size:10px;transition:color .2s;}.nav-item.active{color:var(--accent);}
   .topbar{padding-top:calc(14px + env(safe-area-inset-top,0px));}
   .bottom-nav{padding-bottom:env(safe-area-inset-bottom,0px);}
+  .opt-title{font-size:13px;font-weight:600;color:var(--muted);margin:4px 0 8px;}
+  .seg{display:flex;gap:6px;margin-bottom:18px;}
+  .seg button{flex:1;padding:10px 4px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;font-weight:500;cursor:pointer;}
+  .seg button.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;}
   .install-btn{display:none;width:100%;margin-bottom:14px;padding:13px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);font-size:15px;font-weight:600;cursor:pointer;}
 </style>
 </head>
@@ -96,6 +107,15 @@
   <div class="settings-sheet">
     <div class="settings-handle"></div>
     <button class="install-btn" id="installBtn">📲 Uygulamayı telefona yükle</button>
+    <div class="settings-title">Görünüm</div>
+    <div class="opt-title">Tema</div>
+    <div class="seg" id="themeSeg">
+      <button data-v="dark">🌙 Koyu</button><button data-v="light">☀️ Açık</button><button data-v="amoled">⚫ Siyah</button><button data-v="auto">📱 Sistem</button>
+    </div>
+    <div class="opt-title">Yazı boyutu</div>
+    <div class="seg" id="fsSeg">
+      <button data-v="0.88">Küçük</button><button data-v="1">Normal</button><button data-v="1.15">Büyük</button><button data-v="1.3">Çok büyük</button>
+    </div>
     <div class="settings-title">Kategorileri Düzenle</div>
     <div class="cat-list" id="catList"></div>
   </div>
@@ -181,6 +201,24 @@ document.getElementById('backBtn').onclick=()=>document.getElementById('detailVi
 document.querySelectorAll('.nav-item').forEach(btn=>{btn.onclick=()=>{document.querySelectorAll('.nav-item').forEach(b=>b.classList.remove('active'));btn.classList.add('active');currentPage=btn.dataset.page;renderFeed();};});
 document.getElementById('searchToggle').onclick=()=>{const w=document.getElementById('searchWrap');w.classList.toggle('visible');if(w.classList.contains('visible'))document.getElementById('searchInput').focus();else{searchQuery='';renderFeed();}};
 document.getElementById('searchInput').oninput=e=>{searchQuery=e.target.value;renderFeed();};
+
+// ---- Görünüm ayarları: tema + yazı boyutu ----
+const THEME_COLORS={dark:'#0f1117',light:'#f4f5f8',amoled:'#000000'};
+function getPref(k,d){try{return localStorage.getItem(k)||d;}catch(e){return d;}}
+function setPref(k,v){try{localStorage.setItem(k,v);}catch(e){}}
+function applyLook(){
+  const t=getPref('haber_theme','dark'),f=getPref('haber_fs','1');
+  const eff=t==='auto'?(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark'):t;
+  document.documentElement.setAttribute('data-theme',eff);
+  document.documentElement.style.setProperty('--fs',f);
+  const m=document.querySelector('meta[name="theme-color"]');if(m)m.content=THEME_COLORS[eff];
+  document.querySelectorAll('#themeSeg button').forEach(b=>b.classList.toggle('on',b.dataset.v===t));
+  document.querySelectorAll('#fsSeg button').forEach(b=>b.classList.toggle('on',b.dataset.v===f));
+}
+document.querySelectorAll('#themeSeg button').forEach(b=>b.onclick=()=>{setPref('haber_theme',b.dataset.v);applyLook();});
+document.querySelectorAll('#fsSeg button').forEach(b=>b.onclick=()=>{setPref('haber_fs',b.dataset.v);applyLook();});
+try{matchMedia('(prefers-color-scheme: light)').addEventListener('change',applyLook);}catch(e){}
+applyLook();
 document.getElementById('settingsToggle').onclick=()=>document.getElementById('settingsPanel').classList.add('open');
 document.getElementById('settingsPanel').onclick=e=>{if(e.target===document.getElementById('settingsPanel'))document.getElementById('settingsPanel').classList.remove('open');};
 let deferredInstall=null;
