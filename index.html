@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>HaberAkış</title>
+<style>
+  :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:rgba(255,255,255,0.08);--text:#f0f0f0;--muted:#8a8fa8;--accent:#4f8ef7;--amber:#f5a623;--radius:12px;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+  .topbar{position:sticky;top:0;z-index:100;background:var(--bg);border-bottom:1px solid var(--border);padding:14px 16px 0;}
+  .topbar-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+  .logo{font-size:22px;font-weight:700;letter-spacing:-0.5px;}.logo span{color:var(--accent);}
+  .icon-btn{background:none;border:none;cursor:pointer;color:var(--muted);padding:4px;transition:color .2s;}.icon-btn:hover{color:var(--text);}
+  .tabs-wrap{display:flex;overflow-x:auto;scrollbar-width:none;}.tabs-wrap::-webkit-scrollbar{display:none;}
+  .tab{flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--muted);font-size:13px;font-weight:500;padding:8px 14px;border-bottom:2px solid transparent;transition:all .2s;white-space:nowrap;}
+  .tab.active{color:var(--text);border-bottom-color:var(--accent);}
+  .search-wrap{padding:12px 16px;display:none;background:var(--bg);border-bottom:1px solid var(--border);}
+  .search-wrap.visible{display:block;}
+  .search-input{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:14px;padding:10px 14px;outline:none;}
+  .search-input:focus{border-color:var(--accent);}.search-input::placeholder{color:var(--muted);}
+  .content-wrap{padding-bottom:80px;}
+  .feed{padding:12px 16px;display:flex;flex-direction:column;}
+  .featured-card{background:var(--surface);border-radius:var(--radius);overflow:hidden;margin-bottom:16px;cursor:pointer;transition:opacity .2s;}.featured-card:active{opacity:.8;}
+  .feat-placeholder{width:100%;height:160px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:52px;}
+  .feat-body{padding:14px;}
+  .feat-title{font-size:17px;font-weight:600;line-height:1.4;margin-bottom:8px;}
+  .feat-meta{font-size:12px;color:var(--muted);}
+  .news-item{display:flex;gap:12px;padding:14px 0;border-bottom:1px solid var(--border);cursor:pointer;transition:opacity .2s;}.news-item:active{opacity:.7;}.news-item:last-child{border-bottom:none;}
+  .news-content{flex:1;min-width:0;}
+  .news-title{font-size:14px;font-weight:600;line-height:1.4;margin-bottom:6px;}
+  .news-meta{font-size:11px;color:var(--muted);}
+  .news-thumb{width:80px;height:80px;border-radius:8px;flex-shrink:0;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:28px;overflow:hidden;}
+  .news-thumb img{width:100%;height:100%;object-fit:cover;}
+  .badge{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:3px 8px;border-radius:4px;margin-bottom:6px;}
+  .b-gundem{background:rgba(79,142,247,.2);color:#4f8ef7;}.b-ekonomi{background:rgba(62,207,142,.2);color:#3ecf8e;}
+  .b-spor{background:rgba(245,166,35,.2);color:#f5a623;}.b-teknoloji{background:rgba(167,139,250,.2);color:#a78bfa;}
+  .b-saglik{background:rgba(224,82,82,.2);color:#e05252;}.b-dunya{background:rgba(96,165,250,.2);color:#60a5fa;}
+  .b-kultur{background:rgba(251,146,60,.2);color:#fb923c;}.b-bilim{background:rgba(52,211,153,.2);color:#34d399;}
+  .loader{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:16px;}
+  .spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .loader-text{font-size:14px;color:var(--muted);}
+  .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 20px;gap:12px;color:var(--muted);}
+  .retry-btn{margin-top:8px;background:var(--accent);color:white;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;}
+  .detail-view{display:none;position:fixed;inset:0;z-index:150;background:var(--bg);overflow-y:auto;}.detail-view.open{display:block;}
+  .detail-back{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--border);padding:14px 16px;}
+  .back-btn{background:none;border:none;cursor:pointer;color:var(--accent);display:flex;align-items:center;gap:6px;font-size:14px;font-weight:500;}
+  .detail-body{padding:20px 16px 80px;}
+  .detail-title{font-size:21px;font-weight:700;line-height:1.35;margin-bottom:10px;}
+  .detail-meta{font-size:12px;color:var(--muted);margin-bottom:16px;}
+  .detail-icon{width:100%;height:180px;border-radius:var(--radius);background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:60px;margin-bottom:20px;}
+  .detail-img{width:100%;border-radius:var(--radius);margin-bottom:20px;display:block;}
+  .detail-desc{font-size:15px;line-height:1.75;color:#d0d0d8;margin-bottom:20px;}
+  .detail-link{display:block;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;color:var(--accent);text-decoration:none;font-size:14px;font-weight:500;text-align:center;margin-bottom:10px;}
+  .save-btn{width:100%;padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);color:var(--muted);font-size:14px;font-weight:500;cursor:pointer;}
+  .save-btn.saved{background:rgba(245,166,35,.1);border-color:rgba(245,166,35,.3);color:var(--amber);}
+  .settings-panel{display:none;position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.7);align-items:flex-end;}.settings-panel.open{display:flex;}
+  .settings-sheet{background:var(--surface);border-radius:20px 20px 0 0;padding:20px 16px 40px;width:100%;max-height:80vh;overflow-y:auto;}
+  .settings-handle{width:40px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 20px;}
+  .settings-title{font-size:17px;font-weight:600;margin-bottom:16px;}
+  .cat-list{display:flex;flex-direction:column;gap:8px;}
+  .cat-item{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--surface2);border-radius:var(--radius);}
+  .cat-left{display:flex;align-items:center;gap:10px;font-size:15px;}
+  .toggle{width:44px;height:24px;border-radius:12px;background:rgba(255,255,255,.15);position:relative;transition:background .2s;flex-shrink:0;cursor:pointer;}.toggle.on{background:var(--accent);}
+  .toggle::after{content:'';position:absolute;width:20px;height:20px;background:white;border-radius:50%;top:2px;left:2px;transition:transform .2s;}.toggle.on::after{transform:translateX(20px);}
+  .bottom-nav{position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-top:1px solid var(--border);display:flex;}
+  .nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 8px;background:none;border:none;cursor:pointer;color:var(--muted);font-size:10px;transition:color .2s;}.nav-item.active{color:var(--accent);}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="topbar-row">
+    <div class="logo">haber<span>akış</span></div>
+    <div style="display:flex;gap:12px">
+      <button class="icon-btn" id="searchToggle"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></button>
+      <button class="icon-btn" id="settingsToggle"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+    </div>
+  </div>
+  <div class="tabs-wrap" id="tabsWrap"></div>
+</div>
+<div class="search-wrap" id="searchWrap"><input class="search-input" id="searchInput" type="search" placeholder="Haberlerde ara…"></div>
+<div class="content-wrap" id="mainContent"></div>
+<div class="settings-panel" id="settingsPanel">
+  <div class="settings-sheet">
+    <div class="settings-handle"></div>
+    <div class="settings-title">Kategorileri Düzenle</div>
+    <div class="cat-list" id="catList"></div>
+  </div>
+</div>
+<div class="detail-view" id="detailView">
+  <div class="detail-back"><button class="back-btn" id="backBtn"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg> Geri</button></div>
+  <div class="detail-body" id="detailBody"></div>
+</div>
+<nav class="bottom-nav">
+  <button class="nav-item active" data-page="home"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>Anasayfa</button>
+  <button class="nav-item" data-page="saved"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m19 21-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>Kaydedilenler</button>
+  <button class="nav-item" data-page="trend"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>Trend</button>
+</nav>
+<script>
+const CATS=[
+  {id:'gundem',label:'Gündem',icon:'📰'},
+  {id:'ekonomi',label:'Ekonomi',icon:'💹'},
+  {id:'spor',label:'Spor',icon:'⚽'},
+  {id:'teknoloji',label:'Teknoloji',icon:'💻'},
+  {id:'saglik',label:'Sağlık',icon:'🏥'},
+  {id:'dunya',label:'Dünya',icon:'🌍'},
+  {id:'kultur',label:'Kültür & Sanat',icon:'🎭'},
+  {id:'bilim',label:'Bilim',icon:'🔬'},
+];
+let enabledCats=JSON.parse(localStorage.getItem('haber_cats')||'null')||CATS.map(c=>c.id);
+let activeTab=enabledCats[0],newsCache={},savedItems=JSON.parse(localStorage.getItem('haber_saved')||'[]'),currentPage='home',searchQuery='';
+function saveState(){localStorage.setItem('haber_cats',JSON.stringify(enabledCats));localStorage.setItem('haber_saved',JSON.stringify(savedItems));}
+function relTime(s){try{const d=new Date(s),diff=Math.floor((Date.now()-d)/1000);if(diff<60)return'az önce';if(diff<3600)return Math.floor(diff/60)+' dk önce';if(diff<86400)return Math.floor(diff/3600)+' sa önce';return Math.floor(diff/86400)+' gün önce';}catch{return'';}}
+function parseXML(xml,catId){
+  const cat=CATS.find(c=>c.id===catId);
+  const doc=new DOMParser().parseFromString(xml,'text/xml');
+  return[...doc.querySelectorAll('item')].slice(0,15).map((item,i)=>{
+    const g=t=>item.querySelector(t)?.textContent?.trim()||'';
+    const title=g('title'),link=g('link'),desc=g('description'),pub=g('pubDate');
+    const source=item.querySelector('source')?.textContent?.trim()||'';
+    let thumb='';const m=desc.match(/src=["']([^"']+\.(jpg|jpeg|png|webp))/i);if(m)thumb=m[1];
+    const clean=desc.replace(/<[^>]+>/g,'').replace(/\s+/g,' ').trim().slice(0,280);
+    return{id:`${catId}_${i}_${Date.now()}`,catId,catLabel:cat.label,catIcon:cat.icon,title,link,desc:clean,time:relTime(pub),source,thumb};
+  }).filter(x=>x.title&&x.link);
+}
+async function fetchCategory(catId){
+  if(newsCache[catId])return newsCache[catId];
+  try{
+    const r=await fetch(`news/${catId}.xml?t=${Date.now()}`);
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const xml=await r.text();
+    const items=parseXML(xml,catId);
+    newsCache[catId]=items;return items;
+  }catch(e){newsCache[catId]=[];return[];}
+}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function cardHTML(item,featured=false){
+  const bc='b-'+item.catId;
+  if(featured)return`<div class="featured-card" onclick="openDetail('${item.id}')"><div class="feat-placeholder">${item.catIcon}</div><div class="feat-body"><span class="badge ${bc}">${item.catLabel}</span><div class="feat-title">${esc(item.title)}</div><div class="feat-meta">${esc(item.source)}${item.time?' · '+item.time:''}</div></div></div>`;
+  return`<div class="news-item" onclick="openDetail('${item.id}')"><div class="news-content"><span class="badge ${bc}">${item.catLabel}</span><div class="news-title">${esc(item.title)}</div><div class="news-meta">${esc(item.source)}${item.time?' · '+item.time:''}</div></div><div class="news-thumb">${item.thumb?`<img src="${esc(item.thumb)}" onerror="this.style.display='none'">`:`${item.catIcon}`}</div></div>`;
+}
+async function renderFeed(){
+  const content=document.getElementById('mainContent');
+  if(currentPage==='saved'){
+    if(!savedItems.length){content.innerHTML=`<div class="empty-state"><div style="font-size:48px">🔖</div><div style="font-size:14px;margin-top:8px">Henüz kaydedilen haber yok</div></div>`;}
+    else{const all=Object.values(newsCache).flat();const items=savedItems.map(id=>all.find(x=>x.id===id)).filter(Boolean);content.innerHTML=`<div class="feed">${items.map((x,i)=>cardHTML(x,i===0)).join('')}</div>`;}
+    return;
+  }
+  if(currentPage==='trend'){
+    const all=Object.values(newsCache).flat();
+    if(!all.length){content.innerHTML=`<div class="loader"><div class="spinner"></div><div class="loader-text">Yükleniyor…</div></div>`;for(const id of enabledCats.slice(0,4))await fetchCategory(id);}
+    content.innerHTML=`<div class="feed">${Object.values(newsCache).flat().slice(0,20).map((x,i)=>cardHTML(x,i===0)).join('')}</div>`;
+    return;
+  }
+  let items=newsCache[activeTab];
+  if(!items){
+    const cat=CATS.find(c=>c.id===activeTab);
+    content.innerHTML=`<div class="loader"><div class="spinner"></div><div class="loader-text">${cat.icon} ${cat.label} haberleri yükleniyor…</div></div>`;
+    items=await fetchCategory(activeTab);
+  }
+  if(searchQuery)items=items.filter(x=>x.title.toLowerCase().includes(searchQuery.toLowerCase()));
+  if(!items||!items.length){
+    const cat=CATS.find(c=>c.id===activeTab);
+    content.innerHTML=`<div class="empty-state"><div style="font-size:48px">${cat.icon}</div><div style="font-size:14px;margin-top:8px">Haberler yüklenemedi</div><button class="retry-btn" onclick="delete newsCache['${activeTab}'];renderFeed()">Tekrar Dene</button></div>`;
+    return;
+  }
+  content.innerHTML=`<div class="feed">${items.map((x,i)=>cardHTML(x,i===0)).join('')}</div>`;
+}
+window.openDetail=function(id){
+  const all=Object.values(newsCache).flat();const item=all.find(x=>x.id===id);if(!item)return;
+  const saved=savedItems.includes(id);
+  document.getElementById('detailBody').innerHTML=`<span class="badge b-${item.catId}" style="margin-bottom:12px;display:inline-block">${item.catLabel}</span><div class="detail-title">${esc(item.title)}</div><div class="detail-meta">${esc(item.source)}${item.time?' · '+item.time:''}</div>${item.thumb?`<img class="detail-img" src="${esc(item.thumb)}" onerror="this.outerHTML='<div class=detail-icon>${item.catIcon}</div>'">`:`<div class="detail-icon">${item.catIcon}</div>`}<div class="detail-desc">${esc(item.desc)||'Özet bilgi bulunmuyor.'}</div>${item.link&&item.link!=='#'?`<a class="detail-link" href="${esc(item.link)}" target="_blank">Haberin tamamını oku →</a>`:''}<button class="save-btn${saved?' saved':''}" onclick="toggleSave('${id}')">${saved?'🔖 Kaydedildi':'🔖 Kaydet'}</button>`;
+  document.getElementById('detailView').classList.add('open');
+};
+window.toggleSave=function(id){if(savedItems.includes(id))savedItems=savedItems.filter(x=>x!==id);else savedItems.push(id);saveState();openDetail(id);};
+function buildTabs(){const wrap=document.getElementById('tabsWrap');wrap.innerHTML='';if(!enabledCats.includes(activeTab))activeTab=enabledCats[0];enabledCats.forEach(id=>{const cat=CATS.find(c=>c.id===id);if(!cat)return;const btn=document.createElement('button');btn.className='tab'+(id===activeTab?' active':'');btn.textContent=cat.label;btn.onclick=()=>{activeTab=id;buildTabs();renderFeed();};wrap.appendChild(btn);});}
+function buildSettings(){const list=document.getElementById('catList');list.innerHTML='';CATS.forEach(cat=>{const on=enabledCats.includes(cat.id);const item=document.createElement('div');item.className='cat-item';item.innerHTML=`<div class="cat-left"><span style="font-size:22px">${cat.icon}</span><span>${cat.label}</span></div><div class="toggle ${on?'on':''}" data-id="${cat.id}"></div>`;item.querySelector('.toggle').onclick=e=>{const id=e.currentTarget.dataset.id;if(enabledCats.includes(id)){if(enabledCats.length<=1)return;enabledCats=enabledCats.filter(x=>x!==id);}else enabledCats.push(id);saveState();buildSettings();buildTabs();renderFeed();};list.appendChild(item);});}
+document.getElementById('backBtn').onclick=()=>document.getElementById('detailView').classList.remove('open');
+document.querySelectorAll('.nav-item').forEach(btn=>{btn.onclick=()=>{document.querySelectorAll('.nav-item').forEach(b=>b.classList.remove('active'));btn.classList.add('active');currentPage=btn.dataset.page;renderFeed();};});
+document.getElementById('searchToggle').onclick=()=>{const w=document.getElementById('searchWrap');w.classList.toggle('visible');if(w.classList.contains('visible'))document.getElementById('searchInput').focus();else{searchQuery='';renderFeed();}};
+document.getElementById('searchInput').oninput=e=>{searchQuery=e.target.value;renderFeed();};
+document.getElementById('settingsToggle').onclick=()=>document.getElementById('settingsPanel').classList.add('open');
+document.getElementById('settingsPanel').onclick=e=>{if(e.target===document.getElementById('settingsPanel'))document.getElementById('settingsPanel').classList.remove('open');};
+buildTabs();buildSettings();renderFeed();
+</script>
+</body>
+</html>
