@@ -4,13 +4,14 @@ sayfasindan kapak resmini (og:image) bulur ve news/<kategori>.json yazar.
 Sadece standart kutuphane kullanir.
 
 - Once son 2 saatin haberleri alinir; azsa 6 saate, 24 saate, 72 saate genisler.
-- Google'in sifreli haber linki cozulur, asil haber sayfasi acilip resim ve ozet okunur.
+- Google'in sifreli haber linki cozulur, asil haber sayfasi acilip resim, ozet ve tam metin okunur (news/a/<id>.json).
 - news/tumu.json: tum kategorilerden son 24 saatin dengeli, en yeni ustte karisik akisi.
 - Resim bulunamazsa haber resimsiz kalir (sitede kategori simgesi gorunur).
 - Onceki yayindan bilinen resimler tekrar aranmaz (hizli ve Google'i yormaz).
 - Hic haber alinamazsa is hata verir; boylece siteye bos veri yayinlanmaz.
 """
 import base64
+import hashlib
 import concurrent.futures as cf
 import email.utils
 import html
@@ -19,12 +20,18 @@ import os
 import re
 import sys
 import time
+import unicodedata
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+# Sifre: GitHub "Secrets" icinde HABER_SIFRE olarak saklanir. Doluysa tum haber
+# dosyalari AES-GCM ile sifrelenir; uygulama acilista sifreyi sorar.
+PASSWORD = unicodedata.normalize("NFC", os.environ.get("HABER_SIFRE", "")).strip()
+PBKDF2_ITER = 200_000
+_keys = {}
 MAX_ITEMS = 20
 MIN_ITEMS = 6
 PER_CAT_ALL = 14   # "Tumu" akisinda her kategoriden en fazla bu kadar haber (son 24 saat)
@@ -246,6 +253,47 @@ def shorten(text, limit=480):
     return cut[: end + 1] if end > limit * 0.5 else cut.rsplit(" ", 1)[0] + "…"
 
 
+def hid(text):
+    """index.html'deki hid() ile ayni sonucu verir (haber kimligi)."""
+    h = 0
+    data = text.encode("utf-16-le")
+    for i in range(0, len(data), 2):
+        unit = data[i] | (data[i + 1] << 8)
+        h = (h * 31 + unit) & 0xFFFFFFFF
+    digits, n = "0123456789abcdefghijklmnopqrstuvwxyz", h
+    out = ""
+    while n:
+        out = digits[n % 36] + out
+        n //= 36
+    return "h" + (out or "0")
+
+
+BOILER = re.compile(
+    r"abone ol|tüm hakları|çerez|cookie|©|bültene|haberi paylaş|yorum yap|kvkk|gizlilik|"
+    r"whatsapp|telegram|facebook|twitter|instagram|reklam|sosyal medya hesab|google news|"
+    r"devamını oku|ilgili haber|tıklayın|uygulamamızı", re.I)
+
+
+def article_body(page):
+    """Haber sayfasindan paragraf listesi (yaklasik; reklam/menu atilir)."""
+    page = re.sub(r"(?is)<(script|style|noscript|iframe|nav|header|footer|aside|form|figure|button)\b[^>]*>.*?</\1>", " ", page)
+    arts = re.findall(r"(?is)<article\b[^>]*>(.*?)</article>", page)
+    scope = max(arts, key=len) if arts else page
+    paras, seen, total = [], set(), 0
+    for raw in re.findall(r"(?is)<p\b[^>]*>(.*?)</p>", scope):
+        p = clean_text(raw)
+        if len(p) < 40 or p in seen:
+            continue
+        if len(p) < 220 and BOILER.search(p):
+            continue
+        seen.add(p)
+        paras.append(p)
+        total += len(p)
+        if total > 16000 or len(paras) >= 60:
+            break
+    return paras if len(paras) >= 2 and total >= 300 else []
+
+
 def page_info(page_url):
     """Haber sayfasindan kapak resmi ve ozet metni."""
     page = http_get(page_url, limit=500_000, timeout=12, accept="text/html,*/*").decode("utf-8", "replace")
@@ -262,7 +310,7 @@ def page_info(page_url):
         paras = [clean_text(p) for p in re.findall(r"(?is)<p[^>]*>(.*?)</p>", body)]
         paras = [p for p in paras if len(p) > 70 and p != desc]
         desc = (desc + " " + " ".join(paras[:3])).strip()
-    return img, shorten(desc)
+    return img, shorten(desc), article_body(page)
 
 
 def find_article_info(link):
@@ -270,10 +318,62 @@ def find_article_info(link):
         real = decode_google_url(link)
         if not real or "news.google.com" in real:
             return {"why": "cozulemedi"}
-        img, desc = page_info(real)
-        return {"img": img, "desc": desc, "url": real, "why": "" if img else "resim yok"}
+        img, desc, body = page_info(real)
+        return {"img": img, "desc": desc, "url": real, "body": body, "why": "" if img else "resim yok"}
     except Exception as e:
         return {"why": f"{type(e).__name__}:{str(e)[:30]}"}
+
+
+def _aesgcm():
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    return AESGCM
+
+
+def derive_key(salt):
+    if salt not in _keys:
+        _keys[salt] = hashlib.pbkdf2_hmac("sha256", PASSWORD.encode("utf-8"), salt, PBKDF2_ITER, 32)
+    return _keys[salt]
+
+
+def prev_json(url):
+    """Onceki yayindaki dosyayi indir; sifreliyse coz."""
+    d = json.loads(http_get(url, timeout=10))
+    if isinstance(d, dict) and d.get("enc") == 1:
+        if not PASSWORD:
+            raise ValueError("sifreli ama sifre yok")
+        salt = base64.b64decode(d["salt"])
+        raw = _aesgcm()(derive_key(salt)).decrypt(base64.b64decode(d["iv"]), base64.b64decode(d["ct"]), None)
+        return json.loads(raw)
+    return d
+
+
+def encrypt_all():
+    """news/ altindaki tum .json dosyalarini sifrele (sifre varsa)."""
+    if not PASSWORD:
+        print("UYARI: HABER_SIFRE tanimli degil, haber dosyalari SIFRESIZ yayinlanacak.")
+        return
+    try:
+        AESGCM = _aesgcm()
+    except ImportError:
+        print("HATA: 'cryptography' paketi yok; sifresiz yayin yapmamak icin is durduruldu.")
+        sys.exit(1)
+    salt = os.urandom(16)
+    aes = AESGCM(derive_key(salt))
+    count = 0
+    for root, _, files in os.walk("news"):
+        for fn in files:
+            if not fn.endswith(".json"):
+                continue
+            path = os.path.join(root, fn)
+            with open(path, "rb") as f:
+                raw = f.read()
+            iv = os.urandom(12)
+            blob = {"enc": 1, "salt": base64.b64encode(salt).decode(), "iv": base64.b64encode(iv).decode(),
+                    "ct": base64.b64encode(aes.encrypt(iv, raw, None)).decode()}
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(blob, f)
+            count += 1
+    print(f"{count} haber dosyasi sifrelendi.")
 
 
 def load_previous():
@@ -285,7 +385,7 @@ def load_previous():
     prev = {}
     for cat in list(QUERIES) + ["tumu"]:
         try:
-            data = json.loads(http_get(f"https://{owner}.github.io/{name}/news/{cat}.json", timeout=10))
+            data = prev_json(f"https://{owner}.github.io/{name}/news/{cat}.json")
         except Exception:
             continue
         for i in data.get("items", []):
@@ -294,12 +394,44 @@ def load_previous():
     return prev
 
 
+def prev_base():
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    if "/" not in repo:
+        return ""
+    owner, name = repo.split("/", 1)
+    return f"https://{owner}.github.io/{name}"
+
+
+def write_body(link, paras):
+    os.makedirs(os.path.join("news", "a"), exist_ok=True)
+    with open(os.path.join("news", "a", hid(link) + ".json"), "w", encoding="utf-8") as f:
+        json.dump({"p": paras}, f, ensure_ascii=False)
+
+
+def work(link, p):
+    """Bir haber icin: onceki yayindaki bilgiyi (resim+ozet+metin) al; yoksa sayfadan cek."""
+    base = prev_base()
+    if p and p.get("img") and base:
+        try:
+            data = prev_json(f"{base}/news/a/{hid(link)}.json")
+            if data.get("p"):
+                write_body(link, data["p"])
+                return {"img": p["img"], "desc": p.get("desc", ""), "url": p.get("url", ""), "body": data["p"], "why": "", "reused": True}
+        except Exception:
+            pass
+    r = find_article_info(link)
+    if r.get("body"):
+        write_body(link, r["body"])
+    return r
+
+
 def to_json(items, now):
     return {
         "updated": now.isoformat(),
         "items": [
             {"title": i["title"], "link": i["link"], "url": i.get("url", ""), "source": i["source"],
-             "time": i["dt"].isoformat(), "desc": i["desc"], "img": i["img"], "cat": i.get("cat", "")}
+             "time": i["dt"].isoformat(), "desc": i["desc"], "img": i["img"], "cat": i.get("cat", ""),
+             "full": bool(i.get("full"))}
             for i in items
         ],
     }
@@ -338,20 +470,13 @@ def main():
             by_link.setdefault(it["link"], [])
             if not any(x is it for x in by_link[it["link"]]):
                 by_link[it["link"]].append(it)
-    todo = []
-    for link, group in by_link.items():
-        p = prev.get(link)
-        if p and p.get("img"):
-            for it in group:
-                it.update(img=p["img"], desc=p.get("desc", ""), url=p.get("url", ""))
-        else:
-            todo.append(link)
-    print(f"\nToplam {len(by_link)} farkli haber, {len(todo)} tanesi icin resim/ozet araniyor")
+    todo = list(by_link)
+    print(f"\nToplam {len(by_link)} farkli haber icin resim/ozet/metin araniyor")
 
     stats = {}
     start = time.monotonic()
     with cf.ThreadPoolExecutor(max_workers=WORKERS) as pool_ex:
-        futs = {pool_ex.submit(find_article_info, link): link for link in todo}
+        futs = {pool_ex.submit(work, link, prev.get(link)): link for link in todo}
         try:
             for fut in cf.as_completed(futs, timeout=ENRICH_BUDGET_SEC):
                 link = futs[fut]
@@ -360,15 +485,20 @@ def main():
                     it["img"] = r.get("img", "")
                     it["desc"] = r.get("desc", "") or (prev.get(link, {}).get("desc", ""))
                     it["url"] = r.get("url", "")
-                key = "bulundu" if r.get("img") else r.get("why", "?")
-                stats[key] = stats.get(key, 0) + 1
+                    it["full"] = bool(r.get("body"))
+                if r.get("reused"):
+                    stats["onceden"] = stats.get("onceden", 0) + 1
+                else:
+                    key = "bulundu" if r.get("img") else r.get("why", "?")
+                    stats[key] = stats.get(key, 0) + 1
         except cf.TimeoutError:
             print("Sure siniri doldu, kalan haberler resimsiz birakildi.")
             for f in futs:
                 f.cancel()
     print(f"Resim/ozet arama {time.monotonic() - start:.0f} sn surdu: {stats}")
     n_desc = sum(1 for g in by_link.values() if g[0].get("desc"))
-    print(f"Ozeti olan haber: {n_desc}/{len(by_link)}")
+    n_full = sum(1 for g in by_link.values() if g[0].get("full"))
+    print(f"Ozeti olan haber: {n_desc}/{len(by_link)}, tam metni olan: {n_full}/{len(by_link)}")
 
     now = datetime.now(timezone.utc)
     total = 0
@@ -385,6 +515,7 @@ def main():
     if total == 0:
         print("Hicbir kategoriden haber alinamadi.")
         sys.exit(1)
+    encrypt_all()
 
 
 if __name__ == "__main__":

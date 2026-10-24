@@ -6,6 +6,7 @@
 <title>HaberAkış</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0f1117">
+<meta name="robots" content="noindex, nofollow, noarchive">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="HaberAkış">
@@ -85,6 +86,8 @@ document.documentElement.setAttribute('data-theme',eff);document.documentElement
   .bottom-nav{padding-bottom:env(safe-area-inset-bottom,0px);}
   .sec-head{font-size:calc(12px*var(--fs));font-weight:700;letter-spacing:.4px;color:var(--muted);text-transform:uppercase;padding:14px 4px 6px;display:flex;align-items:center;gap:8px;}
   .sec-head::after{content:'';flex:1;height:1px;background:var(--border);}
+  .detail-desc p{margin:0 0 14px;}
+  .detail-desc .body-note{font-size:calc(12px*var(--fs));color:var(--muted);}
   .opt-title{font-size:13px;font-weight:600;color:var(--muted);margin:4px 0 8px;}
   .seg{display:flex;gap:6px;margin-bottom:18px;}
   .seg button{flex:1;padding:10px 4px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;font-weight:500;cursor:pointer;}
@@ -118,6 +121,7 @@ document.documentElement.setAttribute('data-theme',eff);document.documentElement
     <div class="seg" id="fsSeg">
       <button data-v="0.88">Küçük</button><button data-v="1">Normal</button><button data-v="1.15">Büyük</button><button data-v="1.3">Çok büyük</button>
     </div>
+    <button class="seg-btn" id="lockBtn" style="display:none;width:100%;margin-bottom:18px;padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;cursor:pointer">🔒 Kilitle (şifreyi bu cihazdan sil)</button>
     <div class="settings-title">Kategorileri Düzenle</div>
     <div class="cat-list" id="catList"></div>
   </div>
@@ -150,19 +154,46 @@ function hid(s){let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))|0;re
 function saveState(){try{localStorage.setItem('haber_cats',JSON.stringify(enabledCats));localStorage.setItem('haber_saved',JSON.stringify(savedItems));}catch(e){}}
 function tmOf(item){const t=item.ts?relTime(item.ts):item.time;return t?' · '+t:'';}
 function relTime(s){try{const d=new Date(s),diff=Math.floor((Date.now()-d)/1000);if(diff<60)return'az önce';if(diff<3600)return Math.floor(diff/60)+' dk önce';if(diff<86400)return Math.floor(diff/3600)+' sa önce';return Math.floor(diff/86400)+' gün önce';}catch{return'';}}
+// ---- Sifreli veri: AES-GCM + PBKDF2 (WebCrypto) ----
+const PBKDF2_ITER=200000;let keyCache={},lockState='';
+function b64(s){return Uint8Array.from(atob(s),c=>c.charCodeAt(0));}
+async function deriveKey(pw,saltB64){
+  const ck=pw+'|'+saltB64;if(keyCache[ck])return keyCache[ck];
+  const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw.normalize('NFC').trim()),'PBKDF2',false,['deriveKey']);
+  const k=await crypto.subtle.deriveKey({name:'PBKDF2',salt:b64(saltB64),iterations:PBKDF2_ITER,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['decrypt']);
+  if(Object.keys(keyCache).length>3)keyCache={};
+  keyCache[ck]=k;return k;
+}
+async function getJSON(url){
+  const r=await fetch(url);if(!r.ok)throw new Error('HTTP '+r.status);
+  const d=await r.json();
+  if(!d||d.enc!==1)return d;
+  const pw=getPref('haber_pw','');
+  if(!pw)throw new Error('LOCKED');
+  try{
+    const key=await deriveKey(pw,d.salt);
+    const buf=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64(d.iv)},key,b64(d.ct));
+    return JSON.parse(new TextDecoder().decode(buf));
+  }catch(e){setPref('haber_pw','');throw new Error('WRONG');}
+}
+function showLock(){
+  const wrong=lockState==='WRONG';
+  document.getElementById('mainContent').innerHTML=`<div class="empty-state"><div style="font-size:48px">🔒</div><div style="font-size:15px;margin:8px 0 14px">${wrong?'Şifre yanlış, tekrar deneyin':'Haberleri görmek için şifre girin'}</div><form id="lockForm" style="display:flex;flex-direction:column;gap:10px;width:100%;max-width:280px"><input id="lockInput" type="password" autocomplete="current-password" placeholder="Şifre" class="search-input" style="text-align:center"><button class="retry-btn" type="submit" style="margin:0">Aç</button></form></div>`;
+  document.getElementById('lockForm').onsubmit=e=>{e.preventDefault();const v=document.getElementById('lockInput').value;if(!v)return;setPref('haber_pw',v);lockState='';newsCache={};newsCacheAt={};renderFeed();};
+  setTimeout(()=>{const i=document.getElementById('lockInput');if(i)i.focus();},50);
+}
 async function fetchCategory(catId){
   if(newsCache[catId])return newsCache[catId];
+  lockState='';
   try{
-    const r=await fetch(`news/${catId}.json?t=${Date.now()}`);
-    if(!r.ok)throw new Error('HTTP '+r.status);
-    const data=await r.json();
+    const data=await getJSON(`news/${catId}.json?t=${Date.now()}`);
     let items=(data.items||[]).map(x=>{
       const cat=CATS.find(c=>c.id===(catId==='tumu'?x.cat:catId))||CATS[0];
-      return{id:hid(x.link||x.title||''),catId:cat.id,catLabel:cat.label,catIcon:cat.icon,title:x.title||'',link:x.url||x.link||'',desc:x.desc||'',ts:x.time||'',time:relTime(x.time),source:x.source||'',thumb:x.img||''};
+      return{id:hid(x.link||x.title||''),catId:cat.id,catLabel:cat.label,catIcon:cat.icon,title:x.title||'',link:x.url||x.link||'',desc:x.desc||'',ts:x.time||'',full:!!x.full,time:relTime(x.time),source:x.source||'',thumb:x.img||''};
     }).filter(x=>x.title&&x.link);
     if(catId==='tumu')items=items.filter(x=>enabledCats.includes(x.catId));
     newsCache[catId]=items;newsCacheAt[catId]=Date.now();return items;
-  }catch(e){newsCache[catId]=[];return[];}
+  }catch(e){if(e.message==='LOCKED'||e.message==='WRONG'){lockState=e.message;return[];}newsCache[catId]=[];return[];}
 }
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function cardHTML(item,featured=false){
@@ -188,6 +219,7 @@ async function renderFeed(){
   if(currentPage==='trend'){
     content.innerHTML=`<div class="loader"><div class="spinner"></div><div class="loader-text">Yükleniyor…</div></div>`;
     const items=await fetchCategory('tumu');
+    if(lockState){showLock();return;}
     content.innerHTML=items.length?feedHTML(items.slice(0,20),false):`<div class="empty-state"><div style="font-size:48px">📈</div><div style="font-size:14px;margin-top:8px">Haberler yüklenemedi</div></div>`;
     return;
   }
@@ -196,6 +228,7 @@ async function renderFeed(){
   if(!items){
     content.innerHTML=`<div class="loader"><div class="spinner"></div><div class="loader-text">${cat.icon} ${cat.label} haberleri yükleniyor…</div></div>`;
     items=await fetchCategory(activeTab);
+    if(lockState){showLock();return;}
   }
   if(searchQuery)items=items.filter(matchQuery);
   if(!items||!items.length){
@@ -207,9 +240,22 @@ async function renderFeed(){
 window.openDetail=function(id){
   const all=[...Object.values(newsCache).flat(),...savedItems];const item=all.find(x=>x.id===id);if(!item)return;
   const saved=savedItems.some(x=>x.id===id);
-  document.getElementById('detailBody').innerHTML=`<span class="badge b-${item.catId}" style="margin-bottom:12px;display:inline-block">${item.catLabel}</span><div class="detail-title">${esc(item.title)}</div><div class="detail-meta">${esc(item.source)}${tmOf(item)}</div>${item.thumb?`<img class="detail-img" referrerpolicy="no-referrer" src="${esc(item.thumb)}" onerror="this.outerHTML='<div class=detail-icon>${item.catIcon}</div>'">`:`<div class="detail-icon">${item.catIcon}</div>`}<div class="detail-desc">${item.desc?esc(item.desc):'<span style="color:var(--muted)">Bu haber için özet alınamadı. Aşağıdaki düğmeyle haberin tamamını okuyabilirsiniz.</span>'}</div>${item.link&&item.link!=='#'?`<a class="detail-link" href="${esc(item.link)}" target="_blank">Haberin tamamını oku →</a>`:''}<button class="save-btn${saved?' saved':''}" onclick="toggleSave('${id}')">${saved?'🔖 Kaydedildi':'🔖 Kaydet'}</button>`;
+  document.getElementById('detailBody').innerHTML=`<span class="badge b-${item.catId}" style="margin-bottom:12px;display:inline-block">${item.catLabel}</span><div class="detail-title">${esc(item.title)}</div><div class="detail-meta">${esc(item.source)}${tmOf(item)}</div>${item.thumb?`<img class="detail-img" referrerpolicy="no-referrer" src="${esc(item.thumb)}" onerror="this.outerHTML='<div class=detail-icon>${item.catIcon}</div>'">`:`<div class="detail-icon">${item.catIcon}</div>`}<div class="detail-desc" id="detailText">${item.full?'<span style="color:var(--muted)">Haber metni yükleniyor…</span>':''}${item.full?'':item.desc?esc(item.desc):'<span style="color:var(--muted)">Bu haber için özet alınamadı. Aşağıdaki düğmeyle haberin tamamını okuyabilirsiniz.</span>'}</div>${item.link&&item.link!=='#'?`<a class="detail-link" href="${esc(item.link)}" target="_blank">Haberi kaynağında aç →</a>`:''}<button class="save-btn${saved?' saved':''}" onclick="toggleSave('${id}')">${saved?'🔖 Kaydedildi':'🔖 Kaydet'}</button>`;
   document.getElementById('detailView').classList.add('open');
+  if(item.full)loadBody(item);
 };
+async function loadBody(item){
+  const box=document.getElementById('detailText');
+  box.dataset.id=item.id;
+  try{
+    const d=await getJSON(`news/a/${item.id}.json`);
+    if(!box.isConnected||box.dataset.id!==item.id)return;
+    if(!d.p||!d.p.length)throw new Error('bos');
+    box.innerHTML=d.p.map(p=>`<p>${esc(p)}</p>`).join('')+`<p class="body-note">Metin kaynak siteden otomatik alınmıştır. Resimler ve devamı için haberi kaynağında açın.</p>`;
+  }catch(e){
+    if(box.isConnected&&box.dataset.id===item.id)box.innerHTML=item.desc?`<p>${esc(item.desc)}</p>`:'<span style="color:var(--muted)">Bu haber için metin alınamadı. Aşağıdaki düğmeyle kaynağında okuyabilirsiniz.</span>';
+  }
+}
 window.toggleSave=function(id){if(savedItems.some(x=>x.id===id))savedItems=savedItems.filter(x=>x.id!==id);else{const it=Object.values(newsCache).flat().find(x=>x.id===id);if(it)savedItems.unshift(it);}saveState();openDetail(id);if(currentPage==='saved')renderFeed();};
 function buildTabs(){const wrap=document.getElementById('tabsWrap');wrap.innerHTML='';if(activeTab!=='tumu'&&!enabledCats.includes(activeTab))activeTab='tumu';['tumu',...enabledCats].forEach(id=>{const cat=id==='tumu'?ALL:CATS.find(c=>c.id===id);if(!cat)return;const btn=document.createElement('button');btn.className='tab'+(id===activeTab?' active':'');btn.textContent=cat.label;btn.onclick=()=>{activeTab=id;buildTabs();renderFeed();};wrap.appendChild(btn);});}
 function buildSettings(){const list=document.getElementById('catList');list.innerHTML='';CATS.forEach(cat=>{const on=enabledCats.includes(cat.id);const item=document.createElement('div');item.className='cat-item';item.innerHTML=`<div class="cat-left"><span style="font-size:22px">${cat.icon}</span><span>${cat.label}</span></div><div class="toggle ${on?'on':''}" data-id="${cat.id}"></div>`;item.querySelector('.toggle').onclick=e=>{const id=e.currentTarget.dataset.id;if(enabledCats.includes(id)){if(enabledCats.length<=1)return;enabledCats=enabledCats.filter(x=>x!==id);}else enabledCats.push(id);saveState();delete newsCache.tumu;buildSettings();buildTabs();renderFeed();};list.appendChild(item);});}
@@ -236,7 +282,8 @@ document.querySelectorAll('#themeSeg button').forEach(b=>b.onclick=()=>{setPref(
 document.querySelectorAll('#fsSeg button').forEach(b=>b.onclick=()=>{setPref('haber_fs',b.dataset.v);applyLook();});
 try{matchMedia('(prefers-color-scheme: light)').addEventListener('change',applyLook);}catch(e){}
 applyLook();
-document.getElementById('settingsToggle').onclick=()=>document.getElementById('settingsPanel').classList.add('open');
+document.getElementById('settingsToggle').onclick=()=>{document.getElementById('lockBtn').style.display=getPref('haber_pw','')?'block':'none';document.getElementById('settingsPanel').classList.add('open');};
+document.getElementById('lockBtn').onclick=()=>{setPref('haber_pw','');newsCache={};newsCacheAt={};lockState='';document.getElementById('settingsPanel').classList.remove('open');currentPage='home';renderFeed();};
 document.getElementById('settingsPanel').onclick=e=>{if(e.target===document.getElementById('settingsPanel'))document.getElementById('settingsPanel').classList.remove('open');};
 let deferredInstall=null;
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;document.getElementById('installBtn').style.display='block';});
