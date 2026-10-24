@@ -4,7 +4,8 @@ sayfasindan kapak resmini (og:image) bulur ve news/<kategori>.json yazar.
 Sadece standart kutuphane kullanir.
 
 - Once son 2 saatin haberleri alinir; azsa 6 saate, 24 saate, 72 saate genisler.
-- Google'in sifreli haber linki cozulur, asil haber sayfasi acilip resim okunur.
+- Google'in sifreli haber linki cozulur, asil haber sayfasi acilip resim ve ozet okunur.
+- news/tumu.json: tum kategorilerden son 24 saatin dengeli, en yeni ustte karisik akisi.
 - Resim bulunamazsa haber resimsiz kalir (sitede kategori simgesi gorunur).
 - Onceki yayindan bilinen resimler tekrar aranmaz (hizli ve Google'i yormaz).
 - Hic haber alinamazsa is hata verir; boylece siteye bos veri yayinlanmaz.
@@ -26,7 +27,7 @@ from datetime import datetime, timedelta, timezone
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 MAX_ITEMS = 20
 MIN_ITEMS = 6
-WINDOWS = ("2h", "6h", "24h", "72h")
+PER_CAT_ALL = 14   # "Tumu" akisinda her kategoriden en fazla bu kadar haber (son 24 saat)
 WORKERS = 6
 ENRICH_BUDGET_SEC = 480  # resim arama icin toplam sure siniri
 
@@ -101,52 +102,57 @@ def google_items(cat, window):
             source = src_el.text.strip()
         if source and title.endswith(" - " + source):
             title = title[: -len(" - " + source)]
-        items.append({"title": title, "link": link, "source": source or "Google Haberler", "dt": dt, "desc": "", "img": ""})
+        items.append({"title": title, "link": link, "source": source or "Google Haberler", "dt": dt, "desc": "", "img": "", "url": ""})
     return items
 
 
-def pick_recent(items):
-    """Pencereyi genislete, sonra kaynaklari sirayla karistirip en fazla MAX_ITEMS sec."""
+def pick_recent(items, hours_steps, min_items, max_items):
+    """Pencereyi genislet, sonra kaynaklari sirayla karistirip en fazla max_items sec."""
     now = datetime.now(timezone.utc)
     chosen = []
-    for w in WINDOWS:
-        hours = int(w[:-1])
+    for hours in hours_steps:
         chosen = [i for i in items if now - i["dt"] <= timedelta(hours=hours)]
-        if len(chosen) >= MIN_ITEMS:
+        if len(chosen) >= min_items:
             break
     queues = {}
     for it in sorted(chosen, key=lambda i: i["dt"], reverse=True):
         queues.setdefault(it["source"], []).append(it)
     mixed = []
-    while queues and len(mixed) < MAX_ITEMS:
+    while queues and len(mixed) < max_items:
         for name in list(queues):
             mixed.append(queues[name].pop(0))
             if not queues[name]:
                 del queues[name]
-            if len(mixed) >= MAX_ITEMS:
+            if len(mixed) >= max_items:
                 break
     mixed.sort(key=lambda i: i["dt"], reverse=True)
     return mixed
 
 
-def build_category(cat):
+def title_key(t):
+    return re.sub(r"\W+", "", t.lower())[:60]
+
+
+def build_pool(cat):
+    """Kategorinin son 24 saatlik haber havuzu (az ise 72 saate genisler)."""
     items = []
-    for w in ("2h", "6h", "24h"):
+    for w in ("24h", "72h"):
         try:
             items = google_items(cat, w)
         except Exception as e:
             print(f"  google {w}: hata {type(e).__name__}: {str(e)[:70]}")
             continue
         print(f"  google {w}: {len(items)} haber")
-        if len(items) >= 12:
+        if len(items) >= MIN_ITEMS:
             break
     seen, unique = set(), []
     for it in sorted(items, key=lambda i: i["dt"], reverse=True):
-        key = re.sub(r"\W+", "", it["title"].lower())[:60]
+        key = title_key(it["title"])
         if key not in seen:
             seen.add(key)
+            it["cat"] = cat
             unique.append(it)
-    return pick_recent(unique)
+    return unique
 
 
 # ---------- Google linkini coz, haber sayfasindan resim bul ----------
@@ -219,96 +225,163 @@ def note_failure(where, text):
         print(f"  [teshis] {where}: uzunluk={len(text)} ornek={snippet!r}")
 
 
-def og_image(page_url):
-    data = http_get(page_url, limit=400_000, timeout=12, accept="text/html,*/*").decode("utf-8", "replace")
-    for pat in (
-        r'<meta[^>]+(?:property|name)=["\'](?:og:image(?::secure_url)?|twitter:image(?::src)?)["\'][^>]*?content=["\']([^"\']+)',
-        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]*?(?:property|name)=["\'](?:og:image|twitter:image)["\']',
-    ):
-        m = re.search(pat, data, re.I)
-        if m:
-            url = urllib.parse.urljoin(page_url, html.unescape(m.group(1)).strip())
-            if url.startswith("http://"):
-                url = "https://" + url[7:]
-            if url.startswith("https://"):
-                return url
+def meta_content(page, names):
+    for n in names:
+        for pat in (
+            r'<meta[^>]+(?:property|name)=["\']' + n + r'["\'][^>]*?content=["\']([^"\']*)',
+            r'<meta[^>]+content=["\']([^"\']*)["\'][^>]*?(?:property|name)=["\']' + n + r'["\']',
+        ):
+            m = re.search(pat, page, re.I)
+            if m and m.group(1).strip():
+                return html.unescape(m.group(1)).strip()
     return ""
 
 
-def find_article_image(link):
+def shorten(text, limit=480):
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    end = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "))
+    return cut[: end + 1] if end > limit * 0.5 else cut.rsplit(" ", 1)[0] + "…"
+
+
+def page_info(page_url):
+    """Haber sayfasindan kapak resmi ve ozet metni."""
+    page = http_get(page_url, limit=500_000, timeout=12, accept="text/html,*/*").decode("utf-8", "replace")
+    img = meta_content(page, ["og:image:secure_url", "og:image", "twitter:image", "twitter:image:src"])
+    if img:
+        img = urllib.parse.urljoin(page_url, img)
+        if img.startswith("http://"):
+            img = "https://" + img[7:]
+        if not img.startswith("https://"):
+            img = ""
+    desc = clean_text(meta_content(page, ["og:description", "twitter:description", "description"]))
+    if len(desc) < 120:  # kisa ise sayfadaki ilk paragraflari ekle
+        body = re.sub(r"(?is)<(script|style|nav|header|footer|aside|form)[^>]*>.*?</\1>", " ", page)
+        paras = [clean_text(p) for p in re.findall(r"(?is)<p[^>]*>(.*?)</p>", body)]
+        paras = [p for p in paras if len(p) > 70 and p != desc]
+        desc = (desc + " " + " ".join(paras[:3])).strip()
+    return img, shorten(desc)
+
+
+def find_article_info(link):
     try:
         real = decode_google_url(link)
         if not real or "news.google.com" in real:
-            return "", "cozulemedi"
-        img = og_image(real)
-        return img, "" if img else "resim yok"
+            return {"why": "cozulemedi"}
+        img, desc = page_info(real)
+        return {"img": img, "desc": desc, "url": real, "why": "" if img else "resim yok"}
     except Exception as e:
-        return "", f"{type(e).__name__}:{str(e)[:30]}"
+        return {"why": f"{type(e).__name__}:{str(e)[:30]}"}
 
 
-def load_previous(cat):
-    """Onceki yayindaki resimleri oku: ayni haber icin tekrar arama yapma."""
+def load_previous():
+    """Onceki yayindaki resim/ozetleri oku: ayni haber icin tekrar arama yapma."""
     repo = os.environ.get("GITHUB_REPOSITORY", "")
     if "/" not in repo:
         return {}
     owner, name = repo.split("/", 1)
-    try:
-        data = json.loads(http_get(f"https://{owner}.github.io/{name}/news/{cat}.json", timeout=10))
-        return {i["link"]: i["img"] for i in data.get("items", []) if i.get("img")}
-    except Exception:
-        return {}
+    prev = {}
+    for cat in list(QUERIES) + ["tumu"]:
+        try:
+            data = json.loads(http_get(f"https://{owner}.github.io/{name}/news/{cat}.json", timeout=10))
+        except Exception:
+            continue
+        for i in data.get("items", []):
+            if i.get("link") and (i.get("img") or i.get("desc")):
+                prev[i["link"]] = {"img": i.get("img", ""), "desc": i.get("desc", ""), "url": i.get("url", "")}
+    return prev
+
+
+def to_json(items, now):
+    return {
+        "updated": now.isoformat(),
+        "items": [
+            {"title": i["title"], "link": i["link"], "url": i.get("url", ""), "source": i["source"],
+             "time": i["dt"].isoformat(), "desc": i["desc"], "img": i["img"], "cat": i.get("cat", "")}
+            for i in items
+        ],
+    }
+
+
+def write_json(name, items, now):
+    with open(os.path.join("news", f"{name}.json"), "w", encoding="utf-8") as f:
+        json.dump(to_json(items, now), f, ensure_ascii=False)
 
 
 def main():
     os.makedirs("news", exist_ok=True)
-    chosen = {}
+    prev = load_previous()
+    print(f"Onceki yayindan {len(prev)} haber bilgisi okundu")
+
+    cat_lists, all_lists, seen_all = {}, [], set()
     for cat in QUERIES:
         print(f"[{cat}]")
-        chosen[cat] = build_category(cat)
-        prev = load_previous(cat)
-        for it in chosen[cat]:
-            it["img"] = prev.get(it["link"], "")
-        print(f"  => {len(chosen[cat])} haber secildi, {sum(1 for i in chosen[cat] if i['img'])} resim onceden biliniyor")
+        pool = build_pool(cat)
+        cat_lists[cat] = pick_recent(pool, (2, 6, 24, 72), MIN_ITEMS, MAX_ITEMS)
+        part = []
+        for it in pick_recent(pool, (24,), 1, PER_CAT_ALL * 2):
+            key = title_key(it["title"])
+            if key in seen_all or len(part) >= PER_CAT_ALL:
+                continue
+            seen_all.add(key)
+            part.append(it)
+        all_lists.extend(part)
+        print(f"  => kategori listesi {len(cat_lists[cat])}, tumu akisina {len(part)} haber")
+    all_lists.sort(key=lambda i: i["dt"], reverse=True)
 
-    todo = [it for cat in chosen for it in chosen[cat] if not it["img"]]
-    print(f"\nResim araniyor: {len(todo)} haber")
+    # Ayni haberin tum kopyalari (kategori + tumu) icin bir kez resim/ozet ara.
+    by_link = {}
+    for lst in list(cat_lists.values()) + [all_lists]:
+        for it in lst:
+            by_link.setdefault(it["link"], [])
+            if not any(x is it for x in by_link[it["link"]]):
+                by_link[it["link"]].append(it)
+    todo = []
+    for link, group in by_link.items():
+        p = prev.get(link)
+        if p and p.get("img"):
+            for it in group:
+                it.update(img=p["img"], desc=p.get("desc", ""), url=p.get("url", ""))
+        else:
+            todo.append(link)
+    print(f"\nToplam {len(by_link)} farkli haber, {len(todo)} tanesi icin resim/ozet araniyor")
+
     stats = {}
     start = time.monotonic()
-    with cf.ThreadPoolExecutor(max_workers=WORKERS) as pool:
-        futs = {pool.submit(find_article_image, it["link"]): it for it in todo}
+    with cf.ThreadPoolExecutor(max_workers=WORKERS) as pool_ex:
+        futs = {pool_ex.submit(find_article_info, link): link for link in todo}
         try:
             for fut in cf.as_completed(futs, timeout=ENRICH_BUDGET_SEC):
-                it = futs[fut]
-                img, why = fut.result()
-                it["img"] = img
-                key = "bulundu" if img else why
+                link = futs[fut]
+                r = fut.result()
+                for it in by_link[link]:
+                    it["img"] = r.get("img", "")
+                    it["desc"] = r.get("desc", "") or (prev.get(link, {}).get("desc", ""))
+                    it["url"] = r.get("url", "")
+                key = "bulundu" if r.get("img") else r.get("why", "?")
                 stats[key] = stats.get(key, 0) + 1
         except cf.TimeoutError:
             print("Sure siniri doldu, kalan haberler resimsiz birakildi.")
             for f in futs:
                 f.cancel()
-    print(f"Resim arama {time.monotonic() - start:.0f} sn surdu: {stats}")
+    print(f"Resim/ozet arama {time.monotonic() - start:.0f} sn surdu: {stats}")
+    n_desc = sum(1 for g in by_link.values() if g[0].get("desc"))
+    print(f"Ozeti olan haber: {n_desc}/{len(by_link)}")
 
     now = datetime.now(timezone.utc)
     total = 0
-    for cat, items in chosen.items():
-        # Vitrin haberi resimli olsun: ilk 5 icinde resimli varsa en uste al.
-        for idx, it in enumerate(items[:5]):
+    for cat, items in cat_lists.items():
+        for idx, it in enumerate(items[:5]):  # vitrin haberi resimli olsun
             if it["img"]:
                 items.insert(0, items.pop(idx))
                 break
         total += len(items)
-        out = {
-            "updated": now.isoformat(),
-            "items": [
-                {"title": i["title"], "link": i["link"], "source": i["source"],
-                 "time": i["dt"].isoformat(), "desc": i["desc"], "img": i["img"]}
-                for i in items
-            ],
-        }
-        with open(os.path.join("news", f"{cat}.json"), "w", encoding="utf-8") as f:
-            json.dump(out, f, ensure_ascii=False)
+        write_json(cat, items, now)
         print(f"[{cat}] {len(items)} haber, {sum(1 for i in items if i['img'])} resimli")
+    write_json("tumu", all_lists, now)
+    print(f"[tumu] {len(all_lists)} haber, {sum(1 for i in all_lists if i['img'])} resimli")
     if total == 0:
         print("Hicbir kategoriden haber alinamadi.")
         sys.exit(1)

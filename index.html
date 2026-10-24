@@ -83,6 +83,8 @@ document.documentElement.setAttribute('data-theme',eff);document.documentElement
   .nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 8px;background:none;border:none;cursor:pointer;color:var(--muted);font-size:10px;transition:color .2s;}.nav-item.active{color:var(--accent);}
   .topbar{padding-top:calc(14px + env(safe-area-inset-top,0px));}
   .bottom-nav{padding-bottom:env(safe-area-inset-bottom,0px);}
+  .sec-head{font-size:calc(12px*var(--fs));font-weight:700;letter-spacing:.4px;color:var(--muted);text-transform:uppercase;padding:14px 4px 6px;display:flex;align-items:center;gap:8px;}
+  .sec-head::after{content:'';flex:1;height:1px;background:var(--border);}
   .opt-title{font-size:13px;font-weight:600;color:var(--muted);margin:4px 0 8px;}
   .seg{display:flex;gap:6px;margin-bottom:18px;}
   .seg button{flex:1;padding:10px 4px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;font-weight:500;cursor:pointer;}
@@ -140,63 +142,78 @@ const CATS=[
   {id:'kultur',label:'Kültür & Sanat',icon:'🎭'},
   {id:'bilim',label:'Bilim',icon:'🔬'},
 ];
+const ALL={id:'tumu',label:'Tümü',icon:'🗞️'};
 let enabledCats=JSON.parse(localStorage.getItem('haber_cats')||'null')||CATS.map(c=>c.id);
-let activeTab=enabledCats[0],newsCache={},savedItems=JSON.parse(localStorage.getItem('haber_saved')||'[]'),currentPage='home',searchQuery='';
-function saveState(){localStorage.setItem('haber_cats',JSON.stringify(enabledCats));localStorage.setItem('haber_saved',JSON.stringify(savedItems));}
+let activeTab='tumu',newsCache={},newsCacheAt={},currentPage='home',searchQuery='';
+let savedItems=[];try{savedItems=JSON.parse(localStorage.getItem('haber_saved')||'[]').filter(x=>x&&typeof x==='object');}catch(e){savedItems=[];}
+function hid(s){let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))|0;return 'h'+(h>>>0).toString(36);}
+function saveState(){try{localStorage.setItem('haber_cats',JSON.stringify(enabledCats));localStorage.setItem('haber_saved',JSON.stringify(savedItems));}catch(e){}}
+function tmOf(item){const t=item.ts?relTime(item.ts):item.time;return t?' · '+t:'';}
 function relTime(s){try{const d=new Date(s),diff=Math.floor((Date.now()-d)/1000);if(diff<60)return'az önce';if(diff<3600)return Math.floor(diff/60)+' dk önce';if(diff<86400)return Math.floor(diff/3600)+' sa önce';return Math.floor(diff/86400)+' gün önce';}catch{return'';}}
 async function fetchCategory(catId){
   if(newsCache[catId])return newsCache[catId];
-  const cat=CATS.find(c=>c.id===catId);
   try{
     const r=await fetch(`news/${catId}.json?t=${Date.now()}`);
     if(!r.ok)throw new Error('HTTP '+r.status);
     const data=await r.json();
-    const items=(data.items||[]).map((x,i)=>({id:`${catId}_${i}_${Date.now()}`,catId,catLabel:cat.label,catIcon:cat.icon,title:x.title||'',link:x.link||'',desc:x.desc||'',time:relTime(x.time),source:x.source||'',thumb:x.img||''})).filter(x=>x.title&&x.link);
-    newsCache[catId]=items;return items;
+    let items=(data.items||[]).map(x=>{
+      const cat=CATS.find(c=>c.id===(catId==='tumu'?x.cat:catId))||CATS[0];
+      return{id:hid(x.link||x.title||''),catId:cat.id,catLabel:cat.label,catIcon:cat.icon,title:x.title||'',link:x.url||x.link||'',desc:x.desc||'',ts:x.time||'',time:relTime(x.time),source:x.source||'',thumb:x.img||''};
+    }).filter(x=>x.title&&x.link);
+    if(catId==='tumu')items=items.filter(x=>enabledCats.includes(x.catId));
+    newsCache[catId]=items;newsCacheAt[catId]=Date.now();return items;
   }catch(e){newsCache[catId]=[];return[];}
 }
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function cardHTML(item,featured=false){
   const bc='b-'+item.catId;
-  if(featured)return`<div class="featured-card" onclick="openDetail('${item.id}')"><div class="feat-placeholder">${item.thumb?`<img src="${esc(item.thumb)}" referrerpolicy="no-referrer" loading="lazy" style="width:100%;height:100%;object-fit:cover" onerror="this.outerHTML='${item.catIcon}'">`:item.catIcon}</div><div class="feat-body"><span class="badge ${bc}">${item.catLabel}</span><div class="feat-title">${esc(item.title)}</div><div class="feat-meta">${esc(item.source)}${item.time?' · '+item.time:''}</div></div></div>`;
-  return`<div class="news-item" onclick="openDetail('${item.id}')"><div class="news-content"><span class="badge ${bc}">${item.catLabel}</span><div class="news-title">${esc(item.title)}</div><div class="news-meta">${esc(item.source)}${item.time?' · '+item.time:''}</div></div><div class="news-thumb">${item.thumb?`<img src="${esc(item.thumb)}" referrerpolicy="no-referrer" loading="lazy" onerror="this.outerHTML='${item.catIcon}'">`:`${item.catIcon}`}</div></div>`;
+  if(featured)return`<div class="featured-card" onclick="openDetail('${item.id}')"><div class="feat-placeholder">${item.thumb?`<img src="${esc(item.thumb)}" referrerpolicy="no-referrer" loading="lazy" style="width:100%;height:100%;object-fit:cover" onerror="this.outerHTML='${item.catIcon}'">`:item.catIcon}</div><div class="feat-body"><span class="badge ${bc}">${item.catLabel}</span><div class="feat-title">${esc(item.title)}</div><div class="feat-meta">${esc(item.source)}${tmOf(item)}</div></div></div>`;
+  return`<div class="news-item" onclick="openDetail('${item.id}')"><div class="news-content"><span class="badge ${bc}">${item.catLabel}</span><div class="news-title">${esc(item.title)}</div><div class="news-meta">${esc(item.source)}${tmOf(item)}</div></div><div class="news-thumb">${item.thumb?`<img src="${esc(item.thumb)}" referrerpolicy="no-referrer" loading="lazy" onerror="this.outerHTML='${item.catIcon}'">`:`${item.catIcon}`}</div></div>`;
 }
+function groupLabel(ts){const h=(Date.now()-new Date(ts))/3600000;if(h<1)return'Son 1 saat';if(h<3)return'1–3 saat önce';if(h<6)return'3–6 saat önce';if(h<12)return'6–12 saat önce';return'12–24 saat önce';}
+function feedHTML(items,grouped){
+  if(!grouped)return`<div class="feed">${items.map((x,i)=>cardHTML(x,i===0)).join('')}</div>`;
+  let last='',out='';
+  items.forEach((x,i)=>{const g=x.ts?groupLabel(x.ts):'';if(g&&g!==last){out+=`<div class="sec-head">${g}</div>`;last=g;}out+=cardHTML(x,i===0);});
+  return`<div class="feed">${out}</div>`;
+}
+function matchQuery(x){const q=searchQuery.toLowerCase();return x.title.toLowerCase().includes(q)||(x.desc||'').toLowerCase().includes(q);}
 async function renderFeed(){
   const content=document.getElementById('mainContent');
   if(currentPage==='saved'){
     if(!savedItems.length){content.innerHTML=`<div class="empty-state"><div style="font-size:48px">🔖</div><div style="font-size:14px;margin-top:8px">Henüz kaydedilen haber yok</div></div>`;}
-    else{const all=Object.values(newsCache).flat();const items=savedItems.map(id=>all.find(x=>x.id===id)).filter(Boolean);content.innerHTML=`<div class="feed">${items.map((x,i)=>cardHTML(x,i===0)).join('')}</div>`;}
+    else content.innerHTML=feedHTML(savedItems,false);
     return;
   }
   if(currentPage==='trend'){
-    const all=Object.values(newsCache).flat();
-    if(!all.length){content.innerHTML=`<div class="loader"><div class="spinner"></div><div class="loader-text">Yükleniyor…</div></div>`;for(const id of enabledCats.slice(0,4))await fetchCategory(id);}
-    content.innerHTML=`<div class="feed">${Object.values(newsCache).flat().slice(0,20).map((x,i)=>cardHTML(x,i===0)).join('')}</div>`;
+    content.innerHTML=`<div class="loader"><div class="spinner"></div><div class="loader-text">Yükleniyor…</div></div>`;
+    const items=await fetchCategory('tumu');
+    content.innerHTML=items.length?feedHTML(items.slice(0,20),false):`<div class="empty-state"><div style="font-size:48px">📈</div><div style="font-size:14px;margin-top:8px">Haberler yüklenemedi</div></div>`;
     return;
   }
+  const cat=activeTab==='tumu'?ALL:CATS.find(c=>c.id===activeTab);
   let items=newsCache[activeTab];
   if(!items){
-    const cat=CATS.find(c=>c.id===activeTab);
     content.innerHTML=`<div class="loader"><div class="spinner"></div><div class="loader-text">${cat.icon} ${cat.label} haberleri yükleniyor…</div></div>`;
     items=await fetchCategory(activeTab);
   }
-  if(searchQuery)items=items.filter(x=>x.title.toLowerCase().includes(searchQuery.toLowerCase()));
+  if(searchQuery)items=items.filter(matchQuery);
   if(!items||!items.length){
-    const cat=CATS.find(c=>c.id===activeTab);
-    content.innerHTML=`<div class="empty-state"><div style="font-size:48px">${cat.icon}</div><div style="font-size:14px;margin-top:8px">Haberler yüklenemedi</div><button class="retry-btn" onclick="delete newsCache['${activeTab}'];renderFeed()">Tekrar Dene</button></div>`;
+    content.innerHTML=`<div class="empty-state"><div style="font-size:48px">${cat.icon}</div><div style="font-size:14px;margin-top:8px">${searchQuery?'Aramayla eşleşen haber yok':'Haberler yüklenemedi'}</div>${searchQuery?'':`<button class="retry-btn" onclick="delete newsCache['${activeTab}'];renderFeed()">Tekrar Dene</button>`}</div>`;
     return;
   }
-  content.innerHTML=`<div class="feed">${items.map((x,i)=>cardHTML(x,i===0)).join('')}</div>`;
+  content.innerHTML=feedHTML(items,activeTab==='tumu'&&!searchQuery);
 }
 window.openDetail=function(id){
-  const all=Object.values(newsCache).flat();const item=all.find(x=>x.id===id);if(!item)return;
-  const saved=savedItems.includes(id);
-  document.getElementById('detailBody').innerHTML=`<span class="badge b-${item.catId}" style="margin-bottom:12px;display:inline-block">${item.catLabel}</span><div class="detail-title">${esc(item.title)}</div><div class="detail-meta">${esc(item.source)}${item.time?' · '+item.time:''}</div>${item.thumb?`<img class="detail-img" referrerpolicy="no-referrer" src="${esc(item.thumb)}" onerror="this.outerHTML='<div class=detail-icon>${item.catIcon}</div>'">`:`<div class="detail-icon">${item.catIcon}</div>`}<div class="detail-desc">${esc(item.desc)||'Özet bilgi bulunmuyor.'}</div>${item.link&&item.link!=='#'?`<a class="detail-link" href="${esc(item.link)}" target="_blank">Haberin tamamını oku →</a>`:''}<button class="save-btn${saved?' saved':''}" onclick="toggleSave('${id}')">${saved?'🔖 Kaydedildi':'🔖 Kaydet'}</button>`;
+  const all=[...Object.values(newsCache).flat(),...savedItems];const item=all.find(x=>x.id===id);if(!item)return;
+  const saved=savedItems.some(x=>x.id===id);
+  document.getElementById('detailBody').innerHTML=`<span class="badge b-${item.catId}" style="margin-bottom:12px;display:inline-block">${item.catLabel}</span><div class="detail-title">${esc(item.title)}</div><div class="detail-meta">${esc(item.source)}${tmOf(item)}</div>${item.thumb?`<img class="detail-img" referrerpolicy="no-referrer" src="${esc(item.thumb)}" onerror="this.outerHTML='<div class=detail-icon>${item.catIcon}</div>'">`:`<div class="detail-icon">${item.catIcon}</div>`}<div class="detail-desc">${item.desc?esc(item.desc):'<span style="color:var(--muted)">Bu haber için özet alınamadı. Aşağıdaki düğmeyle haberin tamamını okuyabilirsiniz.</span>'}</div>${item.link&&item.link!=='#'?`<a class="detail-link" href="${esc(item.link)}" target="_blank">Haberin tamamını oku →</a>`:''}<button class="save-btn${saved?' saved':''}" onclick="toggleSave('${id}')">${saved?'🔖 Kaydedildi':'🔖 Kaydet'}</button>`;
   document.getElementById('detailView').classList.add('open');
 };
-window.toggleSave=function(id){if(savedItems.includes(id))savedItems=savedItems.filter(x=>x!==id);else savedItems.push(id);saveState();openDetail(id);};
-function buildTabs(){const wrap=document.getElementById('tabsWrap');wrap.innerHTML='';if(!enabledCats.includes(activeTab))activeTab=enabledCats[0];enabledCats.forEach(id=>{const cat=CATS.find(c=>c.id===id);if(!cat)return;const btn=document.createElement('button');btn.className='tab'+(id===activeTab?' active':'');btn.textContent=cat.label;btn.onclick=()=>{activeTab=id;buildTabs();renderFeed();};wrap.appendChild(btn);});}
-function buildSettings(){const list=document.getElementById('catList');list.innerHTML='';CATS.forEach(cat=>{const on=enabledCats.includes(cat.id);const item=document.createElement('div');item.className='cat-item';item.innerHTML=`<div class="cat-left"><span style="font-size:22px">${cat.icon}</span><span>${cat.label}</span></div><div class="toggle ${on?'on':''}" data-id="${cat.id}"></div>`;item.querySelector('.toggle').onclick=e=>{const id=e.currentTarget.dataset.id;if(enabledCats.includes(id)){if(enabledCats.length<=1)return;enabledCats=enabledCats.filter(x=>x!==id);}else enabledCats.push(id);saveState();buildSettings();buildTabs();renderFeed();};list.appendChild(item);});}
+window.toggleSave=function(id){if(savedItems.some(x=>x.id===id))savedItems=savedItems.filter(x=>x.id!==id);else{const it=Object.values(newsCache).flat().find(x=>x.id===id);if(it)savedItems.unshift(it);}saveState();openDetail(id);if(currentPage==='saved')renderFeed();};
+function buildTabs(){const wrap=document.getElementById('tabsWrap');wrap.innerHTML='';if(activeTab!=='tumu'&&!enabledCats.includes(activeTab))activeTab='tumu';['tumu',...enabledCats].forEach(id=>{const cat=id==='tumu'?ALL:CATS.find(c=>c.id===id);if(!cat)return;const btn=document.createElement('button');btn.className='tab'+(id===activeTab?' active':'');btn.textContent=cat.label;btn.onclick=()=>{activeTab=id;buildTabs();renderFeed();};wrap.appendChild(btn);});}
+function buildSettings(){const list=document.getElementById('catList');list.innerHTML='';CATS.forEach(cat=>{const on=enabledCats.includes(cat.id);const item=document.createElement('div');item.className='cat-item';item.innerHTML=`<div class="cat-left"><span style="font-size:22px">${cat.icon}</span><span>${cat.label}</span></div><div class="toggle ${on?'on':''}" data-id="${cat.id}"></div>`;item.querySelector('.toggle').onclick=e=>{const id=e.currentTarget.dataset.id;if(enabledCats.includes(id)){if(enabledCats.length<=1)return;enabledCats=enabledCats.filter(x=>x!==id);}else enabledCats.push(id);saveState();delete newsCache.tumu;buildSettings();buildTabs();renderFeed();};list.appendChild(item);});}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&currentPage==='home'){const old=Object.keys(newsCacheAt).some(k=>Date.now()-newsCacheAt[k]>10*60*1000);if(old){newsCache={};newsCacheAt={};renderFeed();}}});
 document.getElementById('backBtn').onclick=()=>document.getElementById('detailView').classList.remove('open');
 document.querySelectorAll('.nav-item').forEach(btn=>{btn.onclick=()=>{document.querySelectorAll('.nav-item').forEach(b=>b.classList.remove('active'));btn.classList.add('active');currentPage=btn.dataset.page;renderFeed();};});
 document.getElementById('searchToggle').onclick=()=>{const w=document.getElementById('searchWrap');w.classList.toggle('visible');if(w.classList.contains('visible'))document.getElementById('searchInput').focus();else{searchQuery='';renderFeed();}};
