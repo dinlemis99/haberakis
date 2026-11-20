@@ -269,7 +269,18 @@
       if ((m = path.match(/^news\/([a-z]+)\.json$/))) return m[1] === "tumu" ? buildAll() : buildCategory(m[1]);
       throw new Error("bilinmeyen adres");
     },
-    refresh: function () { poolMem = {}; }
+    refresh: function () { poolMem = {}; },
+    // Haber resmini telefon indirir ve data: adresi olarak verir (yüz süzgeci için çapraz-köken sorunu olmaz)
+    image: async function (url) {
+      var H = C.Plugins && C.Plugins.CapacitorHttp;
+      if (!H) throw new Error("http yok");
+      var r = await withTimeout(H.request({ url: url, method: "GET", responseType: "blob",
+        headers: { "User-Agent": UA, "Accept": "image/*,*/*;q=0.5" } }), 20000);
+      if (!r || r.status >= 400 || !r.data) throw new Error("resim yok");
+      var h = r.headers || {}, ct = String(h["Content-Type"] || h["content-type"] || "image/jpeg").split(";")[0].trim();
+      if (ct.indexOf("image/") !== 0) ct = "image/jpeg";
+      return "data:" + ct + ";base64," + r.data;
+    }
   };
 
   // ---------- Android geri tuşu ----------

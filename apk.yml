@@ -25,7 +25,7 @@ jobs:
           mkdir -p apk/www
           cp apk-package.json apk/package.json
           cp apk-capacitor.config.json apk/capacitor.config.json
-          cp index.html apk/www/index.html
+          cp tambur.html apk/www/index.html
           cp apk-native.js apk/www/native.js
           sed -i 's#</head>#<script src="native.js"></script></head>#' apk/www/index.html
           grep -c 'native.js' apk/www/index.html
@@ -33,6 +33,11 @@ jobs:
         working-directory: apk
         run: |
           npm install --no-audit --no-fund
+          mkdir -p www/model
+          cp node_modules/@vladmandic/face-api/dist/face-api.js www/face-api.js
+          cp node_modules/@vladmandic/face-api/model/ssd_mobilenetv1_model.bin node_modules/@vladmandic/face-api/model/ssd_mobilenetv1_model-weights_manifest.json www/model/
+          cp node_modules/@vladmandic/face-api/model/age_gender_model.bin node_modules/@vladmandic/face-api/model/age_gender_model-weights_manifest.json www/model/
+          ls -la www www/model
           npx cap add android
           npx cap sync android
       - name: Simgeler ve surum numarasi
