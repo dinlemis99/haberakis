@@ -1,0 +1,60 @@
+name: APK derle
+
+# Elle calistirilir: Actions -> "APK derle" -> Run workflow.
+# Sonunda Releases sayfasina HaberAkis.apk yuklenir.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Proje klasorunu hazirla
+        run: |
+          mkdir -p apk/www
+          cp apk-package.json apk/package.json
+          cp apk-capacitor.config.json apk/capacitor.config.json
+          cp index.html apk/www/index.html
+          cp apk-native.js apk/www/native.js
+          sed -i 's#</head>#<script src="native.js"></script></head>#' apk/www/index.html
+          grep -c 'native.js' apk/www/index.html
+      - name: Android projesini olustur
+        working-directory: apk
+        run: |
+          npm install --no-audit --no-fund
+          npx cap add android
+          npx cap sync android
+      - name: Simgeler ve surum numarasi
+        run: |
+          pip install pillow
+          python apk-icons.py apk/android/app/src/main/res
+          sed -i "s/versionCode 1/versionCode ${{ github.run_number }}/" apk/android/app/build.gradle
+          sed -i 's/versionName "1.0"/versionName "1.${{ github.run_number }}"/' apk/android/app/build.gradle
+      - name: Imza anahtari
+        run: |
+          mkdir -p ~/.android
+          echo "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" | base64 -d > ~/.android/debug.keystore
+      - name: APK derle
+        working-directory: apk/android
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+      - name: Releases sayfasina yukle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp apk/android/app/build/outputs/apk/debug/app-debug.apk HaberAkis.apk
+          gh release delete apk-son --yes --cleanup-tag --repo "${{ github.repository }}" || true
+          gh release create apk-son HaberAkis.apk --repo "${{ github.repository }}" --title "HaberAkis APK" --notes "Telefona indirip kurun. Surum: 1.${{ github.run_number }}"

@@ -117,10 +117,15 @@ document.documentElement.setAttribute('data-theme',eff);document.documentElement
     <div class="seg" id="themeSeg">
       <button data-v="dark">🌙 Koyu</button><button data-v="light">☀️ Açık</button><button data-v="amoled">⚫ Siyah</button><button data-v="auto">📱 Sistem</button>
     </div>
+    <div class="opt-title">Haber düzeni</div>
+    <div class="seg" id="layoutSeg">
+      <button data-v="big">🖼️ Büyük kartlar</button><button data-v="list">☰ Liste</button>
+    </div>
     <div class="opt-title">Yazı boyutu</div>
     <div class="seg" id="fsSeg">
       <button data-v="0.88">Küçük</button><button data-v="1">Normal</button><button data-v="1.15">Büyük</button><button data-v="1.3">Çok büyük</button>
     </div>
+    <button id="refreshBtn" style="width:100%;margin-bottom:12px;padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;cursor:pointer">🔄 Haberleri şimdi yenile</button>
     <button class="seg-btn" id="lockBtn" style="display:none;width:100%;margin-bottom:18px;padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;cursor:pointer">🔒 Kilitle (şifreyi bu cihazdan sil)</button>
     <div class="settings-title">Kategorileri Düzenle</div>
     <div class="cat-list" id="catList"></div>
@@ -165,6 +170,7 @@ async function deriveKey(pw,saltB64){
   keyCache[ck]=k;return k;
 }
 async function getJSON(url){
+  if(window.NativeNews)return window.NativeNews.get(url);
   const r=await fetch(url);if(!r.ok)throw new Error('HTTP '+r.status);
   const d=await r.json();
   if(!d||d.enc!==1)return d;
@@ -189,23 +195,47 @@ async function fetchCategory(catId){
     const data=await getJSON(`news/${catId}.json?t=${Date.now()}`);
     let items=(data.items||[]).map(x=>{
       const cat=CATS.find(c=>c.id===(catId==='tumu'?x.cat:catId))||CATS[0];
-      return{id:hid(x.link||x.title||''),catId:cat.id,catLabel:cat.label,catIcon:cat.icon,title:x.title||'',link:x.url||x.link||'',desc:x.desc||'',ts:x.time||'',full:!!x.full,time:relTime(x.time),source:x.source||'',thumb:x.img||''};
+      return{id:hid(x.link||x.title||''),gl:x.link||'',catId:cat.id,catLabel:cat.label,catIcon:cat.icon,title:x.title||'',link:x.url||x.link||'',desc:x.desc||'',ts:x.time||'',full:!!x.full,time:relTime(x.time),source:x.source||'',thumb:x.img||''};
     }).filter(x=>x.title&&x.link);
     if(catId==='tumu')items=items.filter(x=>enabledCats.includes(x.catId));
     newsCache[catId]=items;newsCacheAt[catId]=Date.now();return items;
   }catch(e){if(e.message==='LOCKED'||e.message==='WRONG'){lockState=e.message;return[];}newsCache[catId]=[];return[];}
 }
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function thumbInner(item,featured){
+  if(!item.thumb)return item.catIcon;
+  return`<img src="${esc(item.thumb)}" referrerpolicy="no-referrer" loading="lazy"${featured?' style="width:100%;height:100%;object-fit:cover"':''} onerror="this.outerHTML='${item.catIcon}'">`;
+}
 function cardHTML(item,featured=false){
   const bc='b-'+item.catId;
-  if(featured)return`<div class="featured-card" onclick="openDetail('${item.id}')"><div class="feat-placeholder">${item.thumb?`<img src="${esc(item.thumb)}" referrerpolicy="no-referrer" loading="lazy" style="width:100%;height:100%;object-fit:cover" onerror="this.outerHTML='${item.catIcon}'">`:item.catIcon}</div><div class="feat-body"><span class="badge ${bc}">${item.catLabel}</span><div class="feat-title">${esc(item.title)}</div><div class="feat-meta">${esc(item.source)}${tmOf(item)}</div></div></div>`;
-  return`<div class="news-item" onclick="openDetail('${item.id}')"><div class="news-content"><span class="badge ${bc}">${item.catLabel}</span><div class="news-title">${esc(item.title)}</div><div class="news-meta">${esc(item.source)}${tmOf(item)}</div></div><div class="news-thumb">${item.thumb?`<img src="${esc(item.thumb)}" referrerpolicy="no-referrer" loading="lazy" onerror="this.outerHTML='${item.catIcon}'">`:`${item.catIcon}`}</div></div>`;
+  if(featured)return`<div class="featured-card" data-id="${item.id}" onclick="openDetail('${item.id}')"><div class="feat-placeholder">${thumbInner(item,true)}</div><div class="feat-body"><span class="badge ${bc}">${item.catLabel}</span><div class="feat-title">${esc(item.title)}</div><div class="feat-meta">${esc(item.source)}${tmOf(item)}</div></div></div>`;
+  return`<div class="news-item" data-id="${item.id}" onclick="openDetail('${item.id}')"><div class="news-content"><span class="badge ${bc}">${item.catLabel}</span><div class="news-title">${esc(item.title)}</div><div class="news-meta">${esc(item.source)}${tmOf(item)}</div></div><div class="news-thumb">${thumbInner(item,false)}</div></div>`;
 }
+// APK: arka planda bulunan resim/özeti açık kartlara işle
+window.patchItemMeta=function(gl,m){
+  const seen=new Set();
+  [...Object.values(newsCache).flat(),...savedItems].forEach(it=>{
+    if(it.gl!==gl||seen.has(it)) return;seen.add(it);
+    if(m.img)it.thumb=m.img;if(m.desc&&!it.desc)it.desc=m.desc;if(m.url)it.link=m.url;
+    document.querySelectorAll('[data-id="'+it.id+'"]').forEach(card=>{
+      const box=card.querySelector('.feat-placeholder,.news-thumb');
+      if(box&&it.thumb)box.innerHTML=thumbInner(it,box.classList.contains('feat-placeholder'));
+    });
+  });
+};
+window.handleBack=function(){
+  const d=document.getElementById('detailView');if(d.classList.contains('open')){d.classList.remove('open');return true;}
+  const sp=document.getElementById('settingsPanel');if(sp.classList.contains('open')){sp.classList.remove('open');return true;}
+  if(currentPage!=='home'){document.querySelector('[data-page="home"]').click();return true;}
+  if(activeTab!=='tumu'){activeTab='tumu';buildTabs();renderFeed();return true;}
+  return false;
+};
+function isBig(){return getPref('haber_layout','big')==='big';}
 function groupLabel(ts){const h=(Date.now()-new Date(ts))/3600000;if(h<1)return'Son 1 saat';if(h<3)return'1–3 saat önce';if(h<6)return'3–6 saat önce';if(h<12)return'6–12 saat önce';return'12–24 saat önce';}
 function feedHTML(items,grouped){
-  if(!grouped)return`<div class="feed">${items.map((x,i)=>cardHTML(x,i===0)).join('')}</div>`;
+  if(!grouped)return`<div class="feed">${items.map((x,i)=>cardHTML(x,isBig()||i===0)).join('')}</div>`;
   let last='',out='';
-  items.forEach((x,i)=>{const g=x.ts?groupLabel(x.ts):'';if(g&&g!==last){out+=`<div class="sec-head">${g}</div>`;last=g;}out+=cardHTML(x,i===0);});
+  items.forEach((x,i)=>{const g=x.ts?groupLabel(x.ts):'';if(g&&g!==last){out+=`<div class="sec-head">${g}</div>`;last=g;}out+=cardHTML(x,isBig()||i===0);});
   return`<div class="feed">${out}</div>`;
 }
 function matchQuery(x){const q=searchQuery.toLowerCase();return x.title.toLowerCase().includes(q)||(x.desc||'').toLowerCase().includes(q);}
@@ -277,19 +307,22 @@ function applyLook(){
   const m=document.querySelector('meta[name="theme-color"]');if(m)m.content=THEME_COLORS[eff];
   document.querySelectorAll('#themeSeg button').forEach(b=>b.classList.toggle('on',b.dataset.v===t));
   document.querySelectorAll('#fsSeg button').forEach(b=>b.classList.toggle('on',b.dataset.v===f));
+  document.querySelectorAll('#layoutSeg button').forEach(b=>b.classList.toggle('on',b.dataset.v===getPref('haber_layout','big')));
 }
 document.querySelectorAll('#themeSeg button').forEach(b=>b.onclick=()=>{setPref('haber_theme',b.dataset.v);applyLook();});
+document.querySelectorAll('#layoutSeg button').forEach(b=>b.onclick=()=>{setPref('haber_layout',b.dataset.v);applyLook();renderFeed();});
 document.querySelectorAll('#fsSeg button').forEach(b=>b.onclick=()=>{setPref('haber_fs',b.dataset.v);applyLook();});
 try{matchMedia('(prefers-color-scheme: light)').addEventListener('change',applyLook);}catch(e){}
 applyLook();
 document.getElementById('settingsToggle').onclick=()=>{document.getElementById('lockBtn').style.display=getPref('haber_pw','')?'block':'none';document.getElementById('settingsPanel').classList.add('open');};
+document.getElementById('refreshBtn').onclick=()=>{if(window.NativeNews)window.NativeNews.refresh();newsCache={};newsCacheAt={};document.getElementById('settingsPanel').classList.remove('open');currentPage='home';renderFeed();};
 document.getElementById('lockBtn').onclick=()=>{setPref('haber_pw','');newsCache={};newsCacheAt={};lockState='';document.getElementById('settingsPanel').classList.remove('open');currentPage='home';renderFeed();};
 document.getElementById('settingsPanel').onclick=e=>{if(e.target===document.getElementById('settingsPanel'))document.getElementById('settingsPanel').classList.remove('open');};
 let deferredInstall=null;
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;document.getElementById('installBtn').style.display='block';});
 document.getElementById('installBtn').onclick=async()=>{if(!deferredInstall)return;deferredInstall.prompt();await deferredInstall.userChoice;deferredInstall=null;document.getElementById('installBtn').style.display='none';};
 window.addEventListener('appinstalled',()=>{document.getElementById('installBtn').style.display='none';});
-if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}
+if('serviceWorker' in navigator&&!window.NativeNews){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}
 buildTabs();buildSettings();renderFeed();
 </script>
 </body>
