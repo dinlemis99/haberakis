@@ -262,15 +262,16 @@ const katBul=id=>KATS.find(k=>k.id===id)||KATS[0];
 const lw=t=>(t||"").toLocaleLowerCase("tr-TR");
 
 /* ===== Ayarlar (telefonda saklanır) ===== */
-const VARSAYILAN={satir:6,benzer:0.6,tema:"sistem",resim:true,oto:15,yas:"hepsi",kadin:"gizle"};
+const VARSAYILAN={satir:6,benzer:0.8,tema:"sistem",resim:true,oto:15,yas:"hepsi",kadin:"gizle"};
 let AYAR=Object.assign({},VARSAYILAN);
-try{ Object.assign(AYAR,JSON.parse(localStorage.getItem("gh_ayar")||"{}")); }catch(e){}
+try{ const o=JSON.parse(localStorage.getItem("gh_ayar")||"{}"); if(o.v!==2){ delete o.benzer; } Object.assign(AYAR,o); }catch(e){}
+AYAR.v=2;
 function ayarKaydet(){ try{ localStorage.setItem("gh_ayar",JSON.stringify(AYAR)); }catch(e){} }
 function temaUygula(){ if(AYAR.tema==="sistem") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme",AYAR.tema); }
 temaUygula();
 const AYARLAR=[
   {k:"satir",ad:"Bir satırdaki haber sayısı",s:[[4,"4"],[6,"6"],[8,"8"],[10,"10"]],yeniden:true},
-  {k:"benzer",ad:"Benzer haberleri ele",s:[[0,"Kapalı"],[0.75,"Az"],[0.6,"Normal"],[0.45,"Çok"]],yeniden:true},
+  {k:"benzer",ad:"Benzer haberleri ele",s:[[0,"Kapalı"],[0.8,"Az"],[0.65,"Normal"],[0.5,"Çok"]],yeniden:true},
   {k:"yas",ad:"Haberlerin yaşı",s:[["hepsi","Hepsi"],["24","Son 24 saat"],["6","Son 6 saat"]],yeniden:true},
   {k:"resim",ad:"Haber resimleri",s:[[true,"Göster"],[false,"Gösterme (veri tasarrufu)"]],yeniden:true},
   {k:"kadin",ad:"Kadın resimleri",s:[["kapali","Göster"],["gizle","Kadın yüzü olanları gizle"],["yuz","Yüz olan tüm resimleri gizle"]],yeniden:true},
@@ -285,7 +286,7 @@ function donustur(it){
   return {baslik:it.title,kaynak:it.source,zaman:Date.parse(it.time)||Date.now(),link:it.link,url:it.url||"",desc:it.desc||"",
           resim:it.img||"",cat:it.cat,m:{ad:kt.ad,ton:kt.ton}};
 }
-const anahtar=t=>lw(t).replace(/[^a-zçğıöşü0-9]+/g," ").trim().slice(0,48);
+const anahtar=t=>lw(t).replace(/[^a-zçğıöşü0-9]+/g," ").trim();
 function yasUygun(h){ if(AYAR.yas==="hepsi"||!h.zaman) return true; return Date.now()-h.zaman<(+AYAR.yas)*3600e3; }
 function tekillestir(liste){
   const kelime=t=>new Set(anahtar(t).split(" ").filter(w=>w.length>2));

@@ -12,7 +12,7 @@
   };
   var CATS = Object.keys(QUERIES);
   var UA = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36";
-  var POOL_TTL = 10 * 60 * 1000, MAX_ITEMS = 20, MIN_ITEMS = 6, PER_CAT_ALL = 14, CONC = 4;
+  var POOL_TTL = 10 * 60 * 1000, MAX_ITEMS = 30, MIN_ITEMS = 6, PER_CAT_ALL = 14, CONC = 4;
 
   // ---------- yardımcılar ----------
   function jget(k) { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch (e) { return null; } }
@@ -230,7 +230,7 @@
              desc: m.desc || "", img: m.img || "", cat: it.cat, full: true };
   }
   async function buildCategory(cat) {
-    var items = pickRecent(await getPool(cat), [2, 6, 24, 72], MIN_ITEMS, MAX_ITEMS);
+    var items = pickRecent(await getPool(cat), [24, 72], MIN_ITEMS, MAX_ITEMS);
     enqueue(items);
     return { updated: new Date().toISOString(), items: items.map(view) };
   }
