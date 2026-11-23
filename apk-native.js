@@ -97,6 +97,18 @@
   }
 
   // ---------- haber sayfasından resim / özet / metin ----------
+  async function postForm(url, fields, headers) {
+    var H = C.Plugins && C.Plugins.CapacitorHttp;
+    if (H) {
+      var r = await withTimeout(H.request({ url: url, method: "POST", responseType: "text", data: fields,
+        headers: Object.assign({ "User-Agent": UA, "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" }, headers || {}) }), 15000);
+      if (r.status >= 400) throw new Error("HTTP " + r.status);
+      return typeof r.data === "string" ? r.data : JSON.stringify(r.data);
+    }
+    var body = Object.keys(fields).map(function (k) { return encodeURIComponent(k) + "=" + encodeURIComponent(fields[k]); }).join("&");
+    return http(url, { method: "POST", body: body, timeout: 15000,
+      headers: Object.assign({ "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" }, headers || {}) });
+  }
   function b64decode(s) { return atob(s.replace(/-/g, "+").replace(/_/g, "/")); }
   async function decodeGoogle(link) {
     var u = new URL(link);
@@ -119,13 +131,20 @@
     }
     if (!sg || !ts) throw new Error("imza");
     var inner = '["garturlreq",[["X","X",["X","X"],null,null,1,1,"US:en",null,1,null,null,null,null,null,0,1],"X","X",1,[1,1,1],1,1,null,0,0,null,0],"' + id + '",' + ts + ',"' + sg + '"]';
-    var body = "f.req=" + encodeURIComponent(JSON.stringify([[["Fbv4je", inner]]]));
-    var text = await http("https://news.google.com/_/DotsSplashUi/data/batchexecute", {
-      method: "POST", body: body, timeout: 15000,
-      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8", Cookie: "CONSENT=YES+cb; SOCS=CAI" }
-    });
-    var outer = JSON.parse(text.split("\n\n")[1]);
-    return JSON.parse(outer[0][2])[1];
+    var fields = { "f.req": JSON.stringify([[["Fbv4je", inner]]]) };
+    var text = await postForm("https://news.google.com/_/DotsSplashUi/data/batchexecute", fields, { Cookie: "CONSENT=YES+cb; SOCS=CAI" });
+    var lines = String(text).split("\n");
+    for (var k = 0; k < lines.length; k++) {
+      var ln = lines[k].trim();
+      if (ln.charAt(0) !== "[") continue;
+      try {
+        var arr = JSON.parse(ln);
+        for (var q = 0; q < arr.length; q++) {
+          if (arr[q] && arr[q][0] === "wrb.fr" && arr[q][2]) { var u = JSON.parse(arr[q][2])[1]; if (u) return u; }
+        }
+      } catch (e) {}
+    }
+    throw new Error("yanit: " + String(text).slice(0, 90).replace(/\s+/g, " "));
   }
 
   function metaContent(page, names) {
