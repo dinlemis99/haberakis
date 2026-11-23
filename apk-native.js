@@ -195,15 +195,20 @@
     bodyMem[link] = paras; bodyKeys.push(link);
     if (bodyKeys.length > 60) delete bodyMem[bodyKeys.shift()];
   }
+  var stats = { ok: 0, noimg: 0, decode: 0, page: 0, last: "" };
   async function resolveMeta(link) {
+    var stage = "decode";
     try {
       var real = (meta[link] && meta[link].url) || await decodeGoogle(link);
+      stage = "page";
       var info = pageInfo(await http(real, { timeout: 15000 }), real);
       meta[link] = { img: info.img, desc: info.desc, url: real, t: Date.now() };
+      if (info.img) stats.ok++; else stats.noimg++;
       rememberBody(link, info.body);
       saveMeta();
       if (window.patchItemMeta) window.patchItemMeta(link, meta[link]);
     } catch (e) {
+      stats[stage]++; stats.last = stage + ": " + String(e && e.message || e).slice(0, 60);
       meta[link] = { img: "", desc: "", url: "", t: Date.now() };
       saveMeta();
     }
@@ -269,6 +274,7 @@
       if ((m = path.match(/^news\/([a-z]+)\.json$/))) return m[1] === "tumu" ? buildAll() : buildCategory(m[1]);
       throw new Error("bilinmeyen adres");
     },
+    stats: stats,
     refresh: function () { poolMem = {}; },
     // Haber resmini telefon indirir ve data: adresi olarak verir (yüz süzgeci için çapraz-köken sorunu olmaz)
     image: async function (url) {

@@ -49,7 +49,7 @@ header{flex:none;display:flex;align-items:center;gap:10px;padding:10px 16px 8px;
 .pos{flex:none;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .yenile{flex:none;border:0;background:var(--chip);color:var(--fg);font:600 12px var(--font-ui);border-radius:999px;padding:6px 11px}
 .yenile:disabled{opacity:.5}
-.durum{position:fixed;left:0;right:0;bottom:4px;z-index:6;text-align:center;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 12px;pointer-events:none}
+.durum{position:fixed;left:0;right:0;bottom:4px;z-index:6;text-align:center;font-size:11px;color:var(--muted);white-space:normal;max-height:3.4em;overflow:hidden;padding:0 12px;pointer-events:none}
 .geri{flex:none;border:0;background:none;color:var(--accent);font:600 16px var(--font-ui);padding:6px 4px 6px 0}
 .stage{flex:1;position:relative;overflow:hidden;touch-action:none}
 canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
@@ -459,7 +459,9 @@ function resimKoy(k,im){
 }
 function durumYaz(){ const d=$("#durum"); if(!d||!sonHam) return;
   const top=satirlar.reduce((a,s)=>a+s.kartlar.filter(k=>k.item).length,0); if(!top){ d.textContent=""; return; }
-  d.textContent=`${top} haber · ${resimSay.esles} resimli${resimSay.gizli?` · ${resimSay.gizli} gizlendi`:""}`; }
+  const st=NN&&NN.stats;
+  d.textContent=`${top} haber · ${resimSay.esles} resimli${resimSay.gizli?` · ${resimSay.gizli} gizlendi`:""}`+(st?` · adres ✓${st.ok+st.noimg} ✗${st.decode} · sayfa ✗${st.page} · resimsiz ${st.noimg}${resimSay.hata?` · indirme ✗${resimSay.hata}`:""}${st.last?" · "+st.last:""}`:""); }
+setInterval(()=>{ if(sonHam) durumYaz(); },3000);
 
 /* ===== Tambur hesabı (kenarlar zincirleme, ekran ortasına göre kesintisiz) ===== */
 function egim(d){const ad=Math.abs(d);const g=ad<DUZ_ESIK?0:smooth(Math.min(1,(ad-DUZ_ESIK)/(1-DUZ_ESIK)));const e=ad<=1?g:1+Math.min(1,ad-1);
